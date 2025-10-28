@@ -1,4 +1,4 @@
 {
-  "game_name": "<FILL THIS>",
-  "description": "<FILL THIS>"
+  "game_name": "sortEm",
+  "description": "Sort scrambled numbers by moving blocks! Consecutive numbers merge into groups that move together. Features explosive particle effects, screen shake, and animated backgrounds. Beat your best time!"
 }
