@@ -1,6 +1,6 @@
 // Library version without shebang - safe for Vite to import
 import { readFileSync } from 'fs';
-import { minify } from 'terser';
+import { minify } from '@swc/core';
 
 const MAX_SIZE_KB = 50;
 const MAX_SIZE_BYTES = MAX_SIZE_KB * 1024;
@@ -102,22 +102,11 @@ export async function checkRestrictions(gameJsPath: string = './game.js'): Promi
 
   try {
     const minifyResult = await minify(gameCode, {
-      compress: {
-        dead_code: true,
-        drop_console: false,
-        drop_debugger: true,
-        keep_classnames: false,
-        keep_fargs: true,
-        keep_fnames: false,
-        keep_infinity: false
-      },
-      mangle: {
-        toplevel: true
-      },
-      format: {
-        comments: false
-      }
+      compress: true,
+      mangle: true
     });
+
+    console.log(gameCode);
 
     minifiedCode = minifyResult.code || '';
     minifiedSize = Buffer.byteLength(minifiedCode, 'utf-8');
