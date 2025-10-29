@@ -51,7 +51,7 @@
 
       const handleSubmit = () => {
         if (gitInfo?.remoteUrl) {
-          const submitUrl = `https://hack.platan.us/arcade?repo=${encodeURIComponent(gitInfo.remoteUrl)}`;
+          const submitUrl = `https://hack.platan.us/arcade/submit?repo=${encodeURIComponent(gitInfo.remoteUrl)}`;
           window.open(submitUrl, '_blank');
           onClose();
         }
