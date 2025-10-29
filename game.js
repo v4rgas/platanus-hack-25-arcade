@@ -26,7 +26,58 @@ const colors = {
   blockGrabbed: 0xff006e
 };
 
-// Game State
+// ==========================================
+// GAME PHASES
+// ==========================================
+const GamePhase = {
+  START_SCREEN: 'START_SCREEN',     // Title screen with leaderboard
+  PLAYING: 'PLAYING',                // Active gameplay
+  WIN_ANIMATION: 'WIN_ANIMATION',   // Victory animation playing
+  NAME_INPUT: 'NAME_INPUT',          // High score name entry
+  GAME_OVER: 'GAME_OVER',           // Show final score/leaderboard
+  TRANSITIONING: 'TRANSITIONING'     // Prevent input during transitions
+};
+
+// ==========================================
+// GAME STATE MANAGER
+// ==========================================
+class GameStateManager {
+  constructor() {
+    this.currentPhase = GamePhase.START_SCREEN;
+    this.phaseStartTime = Date.now();
+    this.inputBlocked = false;
+    this.blockDuration = 0;
+  }
+
+  setPhase(newPhase) {
+    // Block input briefly during phase transitions
+    this.currentPhase = GamePhase.TRANSITIONING;
+    this.inputBlocked = true;
+    this.blockDuration = 200; // 200ms input block
+
+    setTimeout(() => {
+      this.currentPhase = newPhase;
+      this.phaseStartTime = Date.now();
+      this.inputBlocked = false;
+    }, this.blockDuration);
+  }
+
+  getPhase() {
+    return this.currentPhase;
+  }
+
+  isInputAllowed() {
+    return !this.inputBlocked && this.currentPhase !== GamePhase.TRANSITIONING;
+  }
+
+  getPhaseTime() {
+    return Date.now() - this.phaseStartTime;
+  }
+}
+
+// ==========================================
+// GAME LOGIC CLASS
+// ==========================================
 class GameState {
   constructor(scene) {
     this.scene = scene;
@@ -403,7 +454,7 @@ function getLb() {
 function saveLb(lb) {
   try {
     localStorage.setItem('sortEmLb', JSON.stringify(lb.slice(0, 3)));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function addScore(name, time) {
@@ -419,7 +470,10 @@ function isHigh(time) {
   return lb.length < 3 || parseFloat(time) < lb[2].t;
 }
 
-// Global state
+// ==========================================
+// GLOBAL VARIABLES
+// ==========================================
+let phaseManager;
 let gameState;
 let graphics;
 let timerText;
@@ -434,78 +488,130 @@ let nameInputActive = false;
 let currentName = ['A', 'A', 'A'];
 let nameInputPos = 0;
 let nameInputObjects = [];
+let gameOverObjects = [];
 
-// Musical notes for movement melody - B is lowest
-const moveNotes = [
-  { freq: 247, dur: 0.15 },  // B (lowest note) - beat 1
-  { freq: 370, dur: 0.15 },  // F# - beat 2 (SNARE)
-  { freq: 370, dur: 0.15 },  // F#
-  { freq: 330, dur: 0.15 },  // E - beat 4 (KICK)
-  { freq: 294, dur: 0.15 },  // D
-  { freq: 277, dur: 0.15 },  // C# - beat 2 (SNARE)
-  { freq: 277, dur: 0.15 },  // C#
-  { freq: 294, dur: 0.15 },  // D - beat 4 (KICK)
-  { freq: 247, dur: 0.15 },  // B
-  { freq: 494, dur: 0.15 },  // B (1 octave higher) - beat 2 (SNARE)
-  { freq: 440, dur: 0.15 },  // A
-  { freq: 247, dur: 0.15 },  // B - beat 4 (KICK)
-  { freq: 294, dur: 0.15 },  // D
-  // Repeat until double C#
-  { freq: 247, dur: 0.15 },  // B
-  { freq: 370, dur: 0.15 },  // F# - beat 4 (KICK)
-  { freq: 370, dur: 0.15 },  // F#
-  { freq: 330, dur: 0.15 },  // E - beat 2 (SNARE)
-  { freq: 294, dur: 0.15 },  // D
-  { freq: 277, dur: 0.15 },  // C# - beat 4 (KICK)
-  { freq: 277, dur: 0.15 },  // C#
-  // Then B F#
-  { freq: 247, dur: 0.15 },  // B - beat 2 (SNARE)
-  { freq: 370, dur: 0.15 }   // F# - beat 4 (KICK)
-];
-let currentNoteIndex = 0;
-let beatCount = 0;
+// ==========================================
+// SIMPLIFIED MUSIC SYSTEM - Adaptive Drum Loop
+// ==========================================
 
-// Adaptive BPM tracking - simplified
-let lastMoveTime = 0;
-let smoothedInterval = 500; // Start at 500ms between moves (120 BPM)
-const SMOOTHING = 0.8; // Higher = more smoothing (0-1)
+// Drum patterns - string based for easy modification
+const drumPatterns = {
+  intro: "kick hihat snare hihat kick . snare hihat kick hihat snare . kick hihat snare hihat",
+  playing: "kick snare kick snare",
+  gameOver: "kick . . . snare . . . kick . . . . . snare .",
+  win: "snare snare snare snare"
+};
+
+// Music configuration
+let baseBPM = 120;          // Default BPM
+let currentBPM = 120;       // Current playing BPM
+let targetBPM = 120;        // Target BPM based on player speed
+let playerMoves = [];       // Track last 10 move timestamps
+const MAX_MOVES_TRACKED = 10;
+const BPM_MIN = 80;         // Minimum BPM
+const BPM_MAX = 180;        // Maximum BPM
+const BPM_SMOOTHING = 0.9;  // How quickly BPM adapts (0-1, higher = slower)
+
+// Drum loop state
+let currentPattern = 'intro';
+let drumLoopTimer = null;
+let patternIndex = 0;
+let isTransitioning = false;
+
+// Parse drum pattern string into array
+function parseDrumPattern(patternStr) {
+  return patternStr.split(' ').map(item => {
+    if (item === '.' || item === 'nothing') return null;
+    return item; // 'kick', 'snare', 'hihat', etc.
+  });
+}
+
+// Calculate BPM from recent player moves
+function calculatePlayerBPM() {
+  if (playerMoves.length < 2) return baseBPM;
+
+  // Calculate average interval between moves
+  let totalInterval = 0;
+  let count = 0;
+
+  for (let i = 1; i < playerMoves.length; i++) {
+    const interval = playerMoves[i] - playerMoves[i - 1];
+    // Filter out unreasonable intervals (too fast or too slow)
+    if (interval >= 200 && interval <= 2000) {
+      totalInterval += interval;
+      count++;
+    }
+  }
+
+  if (count === 0) return currentBPM;
+
+  // Convert average interval to BPM
+  const avgInterval = totalInterval / count;
+  const calculatedBPM = Math.round(60000 / avgInterval);
+
+  // Clamp to reasonable range
+  return Math.max(BPM_MIN, Math.min(BPM_MAX, calculatedBPM));
+}
+
+// Track player move for BPM calculation
+function trackPlayerMove() {
+  const now = Date.now();
+  playerMoves.push(now);
+
+  // Keep only the last N moves
+  if (playerMoves.length > MAX_MOVES_TRACKED) {
+    playerMoves.shift();
+  }
+
+  // Update target BPM
+  if (phaseManager.getPhase() === GamePhase.PLAYING) {
+    targetBPM = calculatePlayerBPM();
+  }
+}
 
 // Display leaderboard - VERTICAL
-function showLb(scene, startY) {
+function showLb(scene, startY, scale = 1) {
   const lb = getLb();
   if (lb.length === 0) return null;
 
   const objects = [];
 
+  // Scale-based sizing
+  const titleSize = Math.round(18 * scale);
+  const scoreSize = Math.round(16 * scale);
+  const lineHeight = Math.round(22 * scale);
+  const bgWidth = Math.round(160 * scale);
+  const bgX = 400 - bgWidth / 2;
+
   // Title
   const title = scene.add.text(400, startY, 'TOP SCORES', {
-    fontSize: '18px',
+    fontSize: titleSize + 'px',
     fontFamily: 'Courier New, monospace',
     color: '#ffffff',
     fontStyle: 'bold'
   }).setOrigin(0.5);
   objects.push(title);
 
-  // Add solid background for better visibility - more compact
-  const bgHeight = 25 + lb.length * 22;
+  // Add solid background for better visibility
+  const bgHeight = Math.round(25 * scale) + lb.length * lineHeight;
   const bg = scene.add.graphics();
   bg.fillStyle(0x2d1b4e, 1);
-  bg.fillRect(320, startY - 15, 160, bgHeight);
+  bg.fillRect(bgX, startY - Math.round(15 * scale), bgWidth, bgHeight);
   bg.lineStyle(3, 0xff006e, 1);
-  bg.strokeRect(320, startY - 15, 160, bgHeight);
+  bg.strokeRect(bgX, startY - Math.round(15 * scale), bgWidth, bgHeight);
 
   // Draw title AFTER background so it's on top
   title.setDepth(10);
 
   objects.push(bg);
 
-  // Each score on its own line - more compact
+  // Each score on its own line
   const colors = ['#ff006e', '#fbbf24', '#00f5ff'];
   lb.forEach((s, i) => {
-    const y = startY + 22 + i * 22;
+    const y = startY + lineHeight + i * lineHeight;
     const txt = (i + 1) + '. ' + s.n + '  ' + s.t.toFixed(1) + 's';
     const scoreText = scene.add.text(400, y, txt, {
-      fontSize: '16px',
+      fontSize: scoreSize + 'px',
       fontFamily: 'Courier New, monospace',
       color: colors[i],
       fontStyle: 'bold'
@@ -635,8 +741,14 @@ function clearNameInput() {
   nameInputActive = false;
 }
 
+// ==========================================
+// CREATE FUNCTION
+// ==========================================
 function create() {
   const scene = this;
+
+  // Initialize phase manager
+  phaseManager = new GameStateManager();
 
   // Create particle texture
   const particleGraphics = scene.make.graphics({ x: 0, y: 0, add: false });
@@ -645,12 +757,51 @@ function create() {
   particleGraphics.generateTexture('particle', 4, 4);
   particleGraphics.destroy();
 
-  // Retro grid background
+  // Grid background
   gridLines = scene.add.graphics();
-
   graphics = scene.add.graphics();
 
-  // HUGE vaporwave title (will hide on first input)
+  // Create start screen UI
+  createStartScreen(scene);
+
+  // Start intro drum loop
+  startDrumLoop(scene, 'intro');
+
+  // Initialize game
+  gameState = new GameState(scene);
+  gameState.generateNumbers();
+
+  // Timer (hidden initially)
+  timerText = scene.add.text(400, 80, 'Time: 0.0s', {
+    fontSize: '56px',
+    fontFamily: 'Courier New, monospace',
+    color: '#00f5ff',
+    fontStyle: 'bold',
+    stroke: '#ff006e',
+    strokeThickness: 6
+  }).setOrigin(0.5);
+  timerText.setVisible(false);
+
+  scene.tweens.add({
+    targets: timerText,
+    scale: { from: 1, to: 1.08 },
+    duration: 800,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut'
+  });
+
+  // Keyboard input
+  scene.input.keyboard.on('keydown', (event) => {
+    handleKeyInput(scene, event);
+  });
+}
+
+// ==========================================
+// START SCREEN UI
+// ==========================================
+function createStartScreen(scene) {
+  // Title
   titleText = scene.add.text(400, 180, 'sortEm', {
     fontSize: '120px',
     fontFamily: 'Courier New, monospace',
@@ -660,7 +811,7 @@ function create() {
     strokeThickness: 8
   }).setOrigin(0.5);
 
-  // Add vaporwave shadow layers
+  // Shadow layers
   titleShadow1 = scene.add.text(403, 183, 'sortEm', {
     fontSize: '120px',
     fontFamily: 'Courier New, monospace',
@@ -677,7 +828,7 @@ function create() {
     alpha: 0.4
   }).setOrigin(0.5);
 
-  // Subtitle - ARCADE EDITION (slanted and overlapping)
+  // Subtitle
   subtitleText = scene.add.text(480, 230, 'ARCADE EDITION', {
     fontSize: '32px',
     fontFamily: 'Courier New, monospace',
@@ -688,7 +839,7 @@ function create() {
     letterSpacing: 6
   }).setOrigin(0.5).setRotation(-0.15).setDepth(100);
 
-  // Pulsing glow effect on title
+  // Animations
   scene.tweens.add({
     targets: titleText,
     scale: { from: 1, to: 1.05 },
@@ -698,7 +849,6 @@ function create() {
     ease: 'Sine.easeInOut'
   });
 
-  // Subtle glow on subtitle
   scene.tweens.add({
     targets: subtitleText,
     alpha: { from: 0.9, to: 1 },
@@ -708,14 +858,14 @@ function create() {
     ease: 'Sine.easeInOut'
   });
 
-  // Instructions - compact (will hide on first input)
+  // Instructions
   instructionsText = scene.add.text(400, 120, 'Arrows: Select • Space: Grab/Drop • Move: Left/Right', {
     fontSize: '16px',
     fontFamily: 'Courier New, monospace',
     color: '#8338ec'
   }).setOrigin(0.5);
 
-  // Credit - retro arcade style signature (different from game style)
+  // Credit
   const creditText = scene.add.text(400, 575, '< v4rgas >', {
     fontSize: '16px',
     fontFamily: 'Arial',
@@ -725,7 +875,6 @@ function create() {
     strokeThickness: 3
   }).setOrigin(0.5);
 
-  // Glitch effect on signature
   scene.tweens.add({
     targets: creditText,
     x: { from: 400, to: 402 },
@@ -742,172 +891,300 @@ function create() {
     repeat: -1
   });
 
-  // Show leaderboard at bottom (will hide on first input)
+  // Leaderboard
   leaderboardText = showLb(scene, 480);
-
-  // Timer - hidden initially, shown after first input - HUGE AND PROMINENT
-  timerText = scene.add.text(400, 80, 'Time: 0.0s', {
-    fontSize: '56px',
-    fontFamily: 'Courier New, monospace',
-    color: '#00f5ff',
-    fontStyle: 'bold',
-    stroke: '#ff006e',
-    strokeThickness: 6
-  }).setOrigin(0.5);
-  timerText.setVisible(false);
-
-  // Add pulsing glow effect to timer
-  scene.tweens.add({
-    targets: timerText,
-    scale: { from: 1, to: 1.08 },
-    duration: 800,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut'
-  });
-
-  // Initialize game - STARTS IMMEDIATELY!
-  gameState = new GameState(scene);
-  gameState.generateNumbers();
-
-  // Keyboard input
-  scene.input.keyboard.on('keydown', (event) => {
-    const key = event.code;
-
-    // Name input mode
-    if (nameInputActive) {
-      if (key === 'ArrowUp') {
-        updateNameLetter(scene, 1);
-      } else if (key === 'ArrowDown') {
-        updateNameLetter(scene, -1);
-      } else if (key === 'ArrowLeft') {
-        if (nameInputPos > 0) {
-          nameInputPos--;
-          playTone(scene, 330, 0.05);
-        }
-      } else if (key === 'ArrowRight') {
-        if (nameInputPos < 2) {
-          nameInputPos++;
-          playTone(scene, 330, 0.05);
-        }
-      } else if (key === 'Space' || key === 'Enter') {
-        const name = currentName.join('');
-        const finalTime = gameState.getElapsedTime().toFixed(1);
-        addScore(name, finalTime);
-        clearNameInput();
-        playTone(scene, 880, 0.15);
-        scene.cameras.main.shake(200, 0.01);
-
-        // Show updated leaderboard and restart prompt
-        setTimeout(() => {
-          const lbObjs = showLb(scene, 300);
-
-          const restartText = scene.add.text(400, 570, 'Press SPACE to Play Again', {
-            fontSize: '20px',
-            fontFamily: 'Courier New, monospace',
-            color: '#00f5ff',
-            fontStyle: 'bold'
-          }).setOrigin(0.5);
-
-          scene.tweens.add({
-            targets: restartText,
-            alpha: { from: 1, to: 0.3 },
-            duration: 800,
-            yoyo: true,
-            repeat: -1
-          });
-        }, 100);
-      }
-      return;
-    }
-
-    // Hide title and instructions on first input, show timer, START TIMER
-    if (titleText && titleText.active) {
-      titleText.destroy();
-      titleShadow1.destroy();
-      titleShadow2.destroy();
-      subtitleText.destroy();
-      instructionsText.destroy();
-      if (leaderboardText) {
-        leaderboardText.forEach(obj => obj.destroy());
-      }
-      titleText = null;
-      titleShadow1 = null;
-      titleShadow2 = null;
-      subtitleText = null;
-      instructionsText = null;
-      leaderboardText = null;
-      timerText.setVisible(true);
-
-      // Start the timer on first input!
-      if (!gameState.startTime) {
-        gameState.startTime = Date.now();
-      }
-    }
-
-    if (gameState.gameWon) {
-      if (key === 'Space' || key === 'Enter') {
-        restartGame(scene);
-      }
-      return;
-    }
-
-    if (!gameState.isGrabbed) {
-      if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.selectPrevious()) {
-        playMelodyNote(scene);
-      } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.selectNext()) {
-        playMelodyNote(scene);
-      } else if (key === 'Space') {
-        gameState.grab();
-        playTone(scene, 660, 0.08);
-      }
-    } else {
-      if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.moveLeft()) {
-        playMelodyNote(scene);
-      } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.moveRight()) {
-        playMelodyNote(scene);
-      } else if (key === 'Space') {
-        const won = gameState.drop();
-        playTone(scene, 880, 0.12);
-        if (won) {
-          winGame(scene);
-        }
-      }
-    }
-  });
-
-  // Start continuous amen break loop
-  startAmenLoop(scene);
 }
 
-function startAmenLoop(scene) {
-  // Simple recursive loop that adapts automatically
-  function loopDrums() {
-    if (!gameState.gameWon) {
-      playAmenBreak(scene, 0);
-      // Schedule next loop based on current smoothedInterval * 4 (one bar = 4 moves)
-      scene.time.delayedCall(smoothedInterval * 4, loopDrums);
+// ==========================================
+// INPUT HANDLER
+// ==========================================
+function handleKeyInput(scene, event) {
+  const key = event.code;
+
+  // Check if input is allowed
+  if (!phaseManager.isInputAllowed()) {
+    return;
+  }
+
+  const phase = phaseManager.getPhase();
+
+  // Handle input based on current phase
+  switch (phase) {
+    case GamePhase.START_SCREEN:
+      handleStartScreenInput(scene, key);
+      break;
+    case GamePhase.PLAYING:
+      handlePlayingInput(scene, key);
+      break;
+    case GamePhase.NAME_INPUT:
+      handleNameInput(scene, key);
+      break;
+    case GamePhase.GAME_OVER:
+      handleGameOverInput(scene, key);
+      break;
+  }
+}
+
+function handleStartScreenInput(scene, key) {
+  // Any game input starts the game
+  if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'KeyA' || key === 'KeyD' || key === 'Space') {
+    // Switch to playing drum loop
+    startDrumLoop(scene, 'playing');
+
+    // Hide title elements
+    if (titleText) titleText.destroy();
+    if (titleShadow1) titleShadow1.destroy();
+    if (titleShadow2) titleShadow2.destroy();
+    if (subtitleText) subtitleText.destroy();
+    if (instructionsText) instructionsText.destroy();
+    if (leaderboardText) {
+      leaderboardText.forEach(obj => obj.destroy());
+    }
+
+    titleText = null;
+    titleShadow1 = null;
+    titleShadow2 = null;
+    subtitleText = null;
+    instructionsText = null;
+    leaderboardText = null;
+
+    // Show timer and start game
+    timerText.setVisible(true);
+    gameState.startTime = Date.now();
+
+    phaseManager.setPhase(GamePhase.PLAYING);
+
+    // Process the actual input for the game
+    setTimeout(() => {
+      handlePlayingInput(scene, key);
+    }, phaseManager.blockDuration + 10);
+  }
+}
+
+function handlePlayingInput(scene, key) {
+  if (!gameState.isGrabbed) {
+    if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.selectPrevious()) {
+      trackPlayerMove();
+    } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.selectNext()) {
+      trackPlayerMove();
+    } else if (key === 'Space') {
+      gameState.grab();
+      playTone(scene, 660, 0.08);
+    }
+  } else {
+    if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.moveLeft()) {
+      trackPlayerMove();
+    } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.moveRight()) {
+      trackPlayerMove();
+    } else if (key === 'Space') {
+      const won = gameState.drop();
+      playTone(scene, 880, 0.12);
+      if (won) {
+        phaseManager.setPhase(GamePhase.WIN_ANIMATION);
+        winGame(scene);
+      }
     }
   }
-  loopDrums();
 }
 
+function handleNameInput(scene, key) {
+  if (key === 'ArrowUp') {
+    updateNameLetter(scene, 1);
+  } else if (key === 'ArrowDown') {
+    updateNameLetter(scene, -1);
+  } else if (key === 'ArrowLeft') {
+    if (nameInputPos > 0) {
+      nameInputPos--;
+      playTone(scene, 330, 0.05);
+    }
+  } else if (key === 'ArrowRight') {
+    if (nameInputPos < 2) {
+      nameInputPos++;
+      playTone(scene, 330, 0.05);
+    }
+  } else if (key === 'Space' || key === 'Enter') {
+    const name = currentName.join('');
+    const finalTime = gameState.getElapsedTime().toFixed(1);
+    addScore(name, finalTime);
+    clearNameInput();
+    playTone(scene, 880, 0.15);
+    scene.cameras.main.shake(200, 0.01);
+
+    // Show game over screen
+    phaseManager.setPhase(GamePhase.GAME_OVER);
+    transitionToGameOver(scene);
+    showGameOverScreen(scene);
+  }
+}
+
+function handleGameOverInput(scene, key) {
+  if (key === 'Space' || key === 'Enter') {
+    // Add extra delay to prevent accidental restarts
+    if (phaseManager.getPhaseTime() > 500) {
+      restartGame(scene);
+    }
+  }
+}
+
+// ==========================================
+// AUDIO FUNCTIONS
+// ==========================================
+
+// Main drum loop function
+function playDrumLoop(scene) {
+  if (!drumLoopTimer) return;
+
+  const pattern = parseDrumPattern(drumPatterns[currentPattern] || drumPatterns.intro);
+
+  // Play current beat
+  if (patternIndex < pattern.length) {
+    const drum = pattern[patternIndex];
+
+    if (drum === 'kick') {
+      playKick(scene);
+    } else if (drum === 'snare') {
+      playSnare(scene);
+    } else if (drum === 'hihat') {
+      playHihat(scene);
+    }
+    // null/rest = silence
+
+    patternIndex = (patternIndex + 1) % pattern.length;
+  }
+
+  // Calculate next beat timing based on current BPM
+  const beatInterval = 60000 / (currentBPM * 2); // 8th notes (2 per beat)
+
+  // Update current BPM to gradually approach target
+  if (!isTransitioning) {
+    currentBPM = currentBPM * BPM_SMOOTHING + targetBPM * (1 - BPM_SMOOTHING);
+  }
+
+  // Schedule next beat
+  drumLoopTimer = scene.time.delayedCall(beatInterval, () => playDrumLoop(scene));
+}
+
+// Start drum loop with specified pattern
+function startDrumLoop(scene, pattern = 'intro') {
+  stopDrumLoop(scene);
+
+  currentPattern = pattern;
+  patternIndex = 0;
+
+  // Reset BPM for new patterns
+  if (pattern === 'intro' || pattern === 'gameOver') {
+    targetBPM = baseBPM;
+    currentBPM = baseBPM;
+    playerMoves = [];
+  }
+
+  // Start the loop
+  drumLoopTimer = scene.time.delayedCall(10, () => playDrumLoop(scene));
+}
+
+// Stop drum loop
+function stopDrumLoop(scene) {
+  if (drumLoopTimer) {
+    scene.time.removeEvent(drumLoopTimer);
+    drumLoopTimer = null;
+  }
+}
+
+// Transition to game over (gradually slow down)
+function transitionToGameOver(scene) {
+  isTransitioning = true;
+  currentPattern = 'gameOver';
+
+  // Gradually slow down over 3 seconds
+  const transitionSteps = 30;
+  let step = 0;
+
+  const slowDownTimer = scene.time.addEvent({
+    delay: 100,
+    callback: () => {
+      step++;
+      const progress = step / transitionSteps;
+      currentBPM = currentBPM * 0.98 + baseBPM * 0.02;
+
+      if (step >= transitionSteps) {
+        isTransitioning = false;
+        currentBPM = baseBPM;
+        targetBPM = baseBPM;
+      }
+    },
+    repeat: transitionSteps - 1
+  });
+}
+
+// Add hihat sound
+function playHihat(scene) {
+  const ctx = scene.sound.context;
+  const noise = ctx.createBufferSource();
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.02, ctx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+
+  for (let i = 0; i < output.length; i++) {
+    output[i] = Math.random() * 2 - 1;
+  }
+
+  noise.buffer = noiseBuffer;
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  filter.type = 'highpass';
+  filter.frequency.value = 8000;
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  // MAX VOLUME
+  gain.gain.setValueAtTime(0.5, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.02);
+
+  noise.start(ctx.currentTime);
+}
+
+// ==========================================
+// UPDATE FUNCTION
+// ==========================================
 function update() {
   if (!gameState) return;
 
-  // CRAZY VAPORWAVE ANIMATED GRID
+  // Draw animated grid
+  drawAnimatedGrid();
+
+  // Draw game blocks
+  gameState.draw(graphics);
+
+  // Update timer if playing
+  if (phaseManager.getPhase() === GamePhase.PLAYING && !gameState.gameWon) {
+    const elapsed = gameState.getElapsedTime();
+    timerText.setText('Time: ' + elapsed.toFixed(1) + 's');
+
+    // Color shifts over time
+    if (elapsed > 30) {
+      timerText.setColor('#ff006e');
+    } else if (elapsed > 15) {
+      timerText.setColor('#fbbf24');
+    }
+  }
+}
+
+// ==========================================
+// GRAPHICS FUNCTIONS
+// ==========================================
+function drawAnimatedGrid() {
   gridLines.clear();
   const gridY = 420;
   const time = Date.now() / 50;
 
-  // Color cycling through vaporwave palette
+  // Color cycling
   const colorPhase = (Date.now() / 2000) % 1;
   const gridColor = colorPhase < 0.33 ? 0xff006e :
-                    colorPhase < 0.66 ? 0x00f5ff : 0x8338ec;
+    colorPhase < 0.66 ? 0x00f5ff : 0x8338ec;
 
-  // CRAZY top section - more vaporwave chaos
-
-  // Floating geometric shapes
+  // Floating shapes
   for (let i = 0; i < 7; i++) {
     const xPos = 50 + i * 110;
     const yFloat = 30 + Math.sin(time / 20 + i * 2) * 20;
@@ -919,12 +1196,12 @@ function update() {
     // Rotating diamond/square
     const x1 = xPos + Math.cos(rotation) * size;
     const y1 = yFloat + Math.sin(rotation) * size;
-    const x2 = xPos + Math.cos(rotation + Math.PI/2) * size;
-    const y2 = yFloat + Math.sin(rotation + Math.PI/2) * size;
+    const x2 = xPos + Math.cos(rotation + Math.PI / 2) * size;
+    const y2 = yFloat + Math.sin(rotation + Math.PI / 2) * size;
     const x3 = xPos + Math.cos(rotation + Math.PI) * size;
     const y3 = yFloat + Math.sin(rotation + Math.PI) * size;
-    const x4 = xPos + Math.cos(rotation + Math.PI*1.5) * size;
-    const y4 = yFloat + Math.sin(rotation + Math.PI*1.5) * size;
+    const x4 = xPos + Math.cos(rotation + Math.PI * 1.5) * size;
+    const y4 = yFloat + Math.sin(rotation + Math.PI * 1.5) * size;
 
     gridLines.beginPath();
     gridLines.moveTo(x1, y1);
@@ -954,10 +1231,10 @@ function update() {
 
     const x1 = xPos + Math.cos(rotation) * size;
     const y1 = yFloat + Math.sin(rotation) * size;
-    const x2 = xPos + Math.cos(rotation + Math.PI * 2/3) * size;
-    const y2 = yFloat + Math.sin(rotation + Math.PI * 2/3) * size;
-    const x3 = xPos + Math.cos(rotation + Math.PI * 4/3) * size;
-    const y3 = yFloat + Math.sin(rotation + Math.PI * 4/3) * size;
+    const x2 = xPos + Math.cos(rotation + Math.PI * 2 / 3) * size;
+    const y2 = yFloat + Math.sin(rotation + Math.PI * 2 / 3) * size;
+    const x3 = xPos + Math.cos(rotation + Math.PI * 4 / 3) * size;
+    const y3 = yFloat + Math.sin(rotation + Math.PI * 4 / 3) * size;
 
     gridLines.beginPath();
     gridLines.moveTo(x1, y1);
@@ -989,40 +1266,32 @@ function update() {
     }
   }
 
-  // Vertical lines with glow
+  // Vertical lines
   gridLines.lineStyle(2, gridColor, 0.5);
   for (let i = -8; i <= 8; i++) {
     const x = 400 + i * 50;
     const glow = Math.sin(time / 15 + i) * 10;
     gridLines.lineBetween(x + glow, gridY, 400 + i * 20, gridY + 200);
   }
-
-  gameState.draw(graphics);
-
-  if (!gameState.gameWon) {
-    const elapsed = gameState.getElapsedTime();
-    timerText.setText('Time: ' + elapsed.toFixed(1) + 's');
-
-    // Color shifts as time goes
-    if (elapsed > 30) {
-      timerText.setColor('#ff006e');
-    } else if (elapsed > 15) {
-      timerText.setColor('#fbbf24');
-    }
-  }
 }
 
+// ==========================================
+// WIN GAME
+// ==========================================
 function winGame(scene) {
   const finalTime = gameState.getElapsedTime().toFixed(1);
 
-  // MASSIVE WIN SHAKE - longer and more intense
+  // Switch to victory drum pattern
+  startDrumLoop(scene, 'win');
+
+  // Victory effects
   scene.cameras.main.shake(3000, 0.025);
 
-  // Victory sound cascade - more notes, more dramatic
-  playTone(scene, 523, 0.1);  // C
-  setTimeout(() => playTone(scene, 659, 0.1), 80);  // E
-  setTimeout(() => playTone(scene, 784, 0.1), 160); // G
-  setTimeout(() => playTone(scene, 1047, 0.15), 240); // C high
+  // Victory sounds
+  playTone(scene, 523, 0.1);
+  setTimeout(() => playTone(scene, 659, 0.1), 80);
+  setTimeout(() => playTone(scene, 784, 0.1), 160);
+  setTimeout(() => playTone(scene, 1047, 0.15), 240);
   setTimeout(() => {
     playTone(scene, 1047, 0.3);
     playKick(scene);
@@ -1048,19 +1317,20 @@ function winGame(scene) {
     onComplete: () => flash.destroy()
   });
 
-  // Darker overlay so text is readable
+  // Overlay
   const overlay = scene.add.graphics();
   overlay.fillStyle(0x1a0a2e, 0.95);
   overlay.fillRect(0, 0, 800, 600);
+  gameOverObjects.push(overlay);
 
-  // Just 2 big explosions from sides
+  // Explosions
   const explosionPoints = [
-    {x: 150, y: 300}, {x: 650, y: 300}
+    { x: 150, y: 300 }, { x: 650, y: 300 }
   ];
 
   explosionPoints.forEach((point, i) => {
     setTimeout(() => {
-      scene.add.particles(point.x, point.y, 'particle', {
+      const particles = scene.add.particles(point.x, point.y, 'particle', {
         speed: { min: 300, max: 600 },
         angle: { min: 0, max: 360 },
         scale: { start: 3, end: 0 },
@@ -1071,12 +1341,13 @@ function winGame(scene) {
         blendMode: 'ADD',
         gravityY: 200
       });
+      gameOverObjects.push(particles);
       playKick(scene);
       scene.cameras.main.shake(200, 0.015);
     }, i * 200);
   });
 
-  // Win text - pixel style (moved up)
+  // Win text
   const winText = scene.add.text(400, 180, 'SORTED!', {
     fontSize: '96px',
     fontFamily: 'Courier New, monospace',
@@ -1085,6 +1356,7 @@ function winGame(scene) {
     stroke: '#ff006e',
     strokeThickness: 8
   }).setOrigin(0.5);
+  gameOverObjects.push(winText);
 
   scene.tweens.add({
     targets: winText,
@@ -1095,55 +1367,260 @@ function winGame(scene) {
     ease: 'Sine.easeInOut'
   });
 
-  // Time display (moved down)
+  // Time display
   const timeText = scene.add.text(400, 520, 'Time: ' + finalTime + 's', {
     fontSize: '40px',
     fontFamily: 'Courier New, monospace',
     color: '#fbbf24',
     fontStyle: 'bold'
   }).setOrigin(0.5);
+  gameOverObjects.push(timeText);
 
   // Check if high score
   setTimeout(() => {
     if (isHigh(finalTime)) {
-      // Show name input
+      phaseManager.setPhase(GamePhase.NAME_INPUT);
       showNameInput(scene, finalTime);
     } else {
-      // Just show leaderboard (in the middle)
-      const lbObjs = showLb(scene, 300);
-
-      // Restart prompt
-      const restartText = scene.add.text(400, 570, 'Press SPACE to Play Again', {
-        fontSize: '20px',
-        fontFamily: 'Courier New, monospace',
-        color: '#00f5ff',
-        fontStyle: 'bold'
-      }).setOrigin(0.5);
-
-      scene.tweens.add({
-        targets: restartText,
-        alpha: { from: 1, to: 0.3 },
-        duration: 800,
-        yoyo: true,
-        repeat: -1
-      });
+      phaseManager.setPhase(GamePhase.GAME_OVER);
+      transitionToGameOver(scene);
+      showGameOverScreen(scene);
     }
-  }, 800);
+  }, 1500);
 }
 
+// ==========================================
+// GAME OVER SCREEN
+// ==========================================
+function showGameOverScreen(scene) {
+  // Clear any existing game over objects
+  clearGameOverObjects();
+
+  // Hide timer
+  if (timerText) {
+    timerText.setVisible(false);
+  }
+
+  // Dark overlay to cover game elements
+  const overlay = scene.add.graphics();
+  overlay.fillStyle(0x1a0a2e, 0.97);
+  overlay.fillRect(0, 0, 800, 600);
+  gameOverObjects.push(overlay);
+
+  // Add some floating particles in the background
+  const bgParticles = scene.add.particles(400, 300, 'particle', {
+    x: { min: -400, max: 400 },
+    y: { min: -300, max: 300 },
+    scale: { start: 1.5, end: 0 },
+    alpha: { start: 0.3, end: 0 },
+    speed: 50,
+    lifespan: 3000,
+    quantity: 1,
+    frequency: 300,
+    tint: [0xff006e, 0x8338ec, 0x00f5ff],
+    blendMode: 'ADD'
+  });
+  gameOverObjects.push(bgParticles);
+
+  // "GAME COMPLETE" text with retro style
+  const completeText = scene.add.text(400, 100, 'GAME COMPLETE', {
+    fontSize: '48px',
+    fontFamily: 'Courier New, monospace',
+    color: '#fbbf24',
+    fontStyle: 'bold',
+    stroke: '#ff006e',
+    strokeThickness: 4
+  }).setOrigin(0.5);
+  gameOverObjects.push(completeText);
+
+  // Add shadow effect
+  const completeShadow = scene.add.text(403, 103, 'GAME COMPLETE', {
+    fontSize: '48px',
+    fontFamily: 'Courier New, monospace',
+    color: '#8338ec',
+    fontStyle: 'bold',
+    alpha: 0.5
+  }).setOrigin(0.5);
+  gameOverObjects.push(completeShadow);
+
+  // Animate the complete text
+  scene.tweens.add({
+    targets: [completeText, completeShadow],
+    scale: { from: 0.8, to: 1.05 },
+    duration: 1500,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut'
+  });
+
+  // Time display
+  const finalTime = gameState.getElapsedTime().toFixed(1);
+  const timeText = scene.add.text(400, 160, 'Time: ' + finalTime + 's', {
+    fontSize: '32px',
+    fontFamily: 'Courier New, monospace',
+    color: '#00f5ff',
+    fontStyle: 'bold'
+  }).setOrigin(0.5);
+  gameOverObjects.push(timeText);
+
+  // Show leaderboard with a nice frame - bigger scale
+  const lbScale = 1.5;
+  const lbFrame = scene.add.graphics();
+  lbFrame.lineStyle(4, 0xff006e, 1);
+  lbFrame.strokeRect(240, 220, 320, 200);
+
+  // Add glowing effect to frame
+  const lbFrameGlow = scene.add.graphics();
+  lbFrameGlow.lineStyle(8, 0x00f5ff, 0.3);
+  lbFrameGlow.strokeRect(236, 216, 328, 208);
+
+  gameOverObjects.push(lbFrame);
+  gameOverObjects.push(lbFrameGlow);
+
+  // Animate frame glow
+  scene.tweens.add({
+    targets: lbFrameGlow,
+    alpha: { from: 0.2, to: 0.6 },
+    duration: 1000,
+    yoyo: true,
+    repeat: -1
+  });
+
+  const lbObjs = showLb(scene, 265, lbScale);
+  if (lbObjs) {
+    gameOverObjects = gameOverObjects.concat(lbObjs);
+  }
+
+  // Cool divider line
+  const divider = scene.add.graphics();
+  divider.lineStyle(3, 0x8338ec, 1);
+  divider.lineBetween(200, 450, 600, 450);
+  gameOverObjects.push(divider);
+
+  // Decorative triangles
+  const tri1 = scene.add.graphics();
+  tri1.lineStyle(2, 0xfbbf24, 0.8);
+  tri1.strokeTriangle(150, 480, 170, 510, 130, 510);
+  gameOverObjects.push(tri1);
+
+  const tri2 = scene.add.graphics();
+  tri2.lineStyle(2, 0xfbbf24, 0.8);
+  tri2.strokeTriangle(650, 480, 670, 510, 630, 510);
+  gameOverObjects.push(tri2);
+
+  // Rotating animation for triangles
+  scene.tweens.add({
+    targets: [tri1, tri2],
+    rotation: Math.PI * 2,
+    duration: 8000,
+    repeat: -1
+  });
+
+  // "PLAY AGAIN?" text
+  const readyText = scene.add.text(400, 490, 'PLAY AGAIN?', {
+    fontSize: '28px',
+    fontFamily: 'Courier New, monospace',
+    color: '#00f5ff',
+    fontStyle: 'bold italic',
+    stroke: '#8338ec',
+    strokeThickness: 3
+  }).setOrigin(0.5);
+  gameOverObjects.push(readyText);
+
+  // Glitch effect on text
+  scene.tweens.add({
+    targets: readyText,
+    x: { from: 398, to: 402 },
+    duration: 100,
+    yoyo: true,
+    repeat: -1
+  });
+
+  // "PRESS SPACE TO PLAY" text
+  const pressText = scene.add.text(400, 550, 'PRESS SPACE TO PLAY', {
+    fontSize: '24px',
+    fontFamily: 'Courier New, monospace',
+    color: '#fbbf24',
+    fontStyle: 'bold'
+  }).setOrigin(0.5);
+  gameOverObjects.push(pressText);
+
+  // Pulse text
+  scene.tweens.add({
+    targets: pressText,
+    scale: { from: 1, to: 1.1 },
+    duration: 600,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut'
+  });
+
+  // Add some animated stars
+  for (let i = 0; i < 5; i++) {
+    const star = scene.add.text(
+      100 + i * 150,
+      100,
+      '★',
+      {
+        fontSize: '24px',
+        color: '#00f5ff'
+      }
+    );
+    gameOverObjects.push(star);
+
+    scene.tweens.add({
+      targets: star,
+      y: { from: 100, to: 120 },
+      alpha: { from: 0.3, to: 1 },
+      duration: 1000 + i * 200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    scene.tweens.add({
+      targets: star,
+      rotation: Math.PI * 2,
+      duration: 3000 + i * 500,
+      repeat: -1
+    });
+  }
+}
+
+function clearGameOverObjects() {
+  gameOverObjects.forEach(obj => {
+    if (obj && obj.destroy) obj.destroy();
+  });
+  gameOverObjects = [];
+}
+
+// ==========================================
+// RESTART GAME
+// ==========================================
 function restartGame(scene) {
+  // Clean up
   if (gameState) {
     gameState.cleanup();
   }
-  // Reset name input state
   if (nameInputActive) {
     clearNameInput();
   }
-  // Reset BPM tracking
-  lastMoveTime = 0;
-  smoothedInterval = 500;
-  currentNoteIndex = 0;
+  clearGameOverObjects();
 
+  // Stop drum loop
+  stopDrumLoop(scene);
+
+  // Reset music state
+  currentBPM = baseBPM;
+  targetBPM = baseBPM;
+  playerMoves = [];
+  patternIndex = 0;
+  isTransitioning = false;
+
+  // Reset phase manager
+  phaseManager = new GameStateManager();
+
+  // Restart scene
   scene.scene.restart();
 }
 
@@ -1158,7 +1635,8 @@ function playTone(scene, freq, dur) {
   osc.frequency.value = freq;
   osc.type = 'square';
 
-  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  // MAX VOLUME
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + dur);
 
   osc.start(ctx.currentTime);
@@ -1173,15 +1651,17 @@ function playKick(scene) {
   osc.connect(gain);
   gain.connect(ctx.destination);
 
-  osc.frequency.setValueAtTime(150, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
+  // Higher pitched and punchier - 250Hz to 60Hz
+  osc.frequency.setValueAtTime(250, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.08);
   osc.type = 'sine';
 
-  gain.gain.setValueAtTime(0.6, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+  // MAX VOLUME for more punch
+  gain.gain.setValueAtTime(1.0, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
 
   osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.15);
+  osc.stop(ctx.currentTime + 0.12);
 }
 
 function playSnare(scene) {
@@ -1200,68 +1680,10 @@ function playSnare(scene) {
   noise.connect(noiseGain);
   noiseGain.connect(ctx.destination);
 
-  noiseGain.gain.setValueAtTime(0.35, ctx.currentTime);
+  // MAX VOLUME
+  noiseGain.gain.setValueAtTime(0.8, ctx.currentTime);
   noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
 
   noise.start(ctx.currentTime);
 }
 
-function playMelodyNote(scene) {
-  const note = moveNotes[currentNoteIndex];
-  playTone(scene, note.freq, note.dur);
-  currentNoteIndex = (currentNoteIndex + 1) % moveNotes.length;
-
-  // Simple exponential smoothing for player rhythm
-  const now = Date.now();
-  if (lastMoveTime > 0) {
-    const interval = now - lastMoveTime;
-    // Only update if interval is reasonable (100ms to 1500ms)
-    if (interval >= 100 && interval <= 1500) {
-      smoothedInterval = (SMOOTHING * smoothedInterval) + ((1 - SMOOTHING) * interval);
-    }
-  }
-  lastMoveTime = now;
-}
-
-function playAmenBreak(scene, startTime) {
-  // Simple drum pattern - uses smoothedInterval directly
-  // Each 16th note is smoothedInterval / 4
-  const sixteenth = smoothedInterval / 4000; // Convert ms to seconds, divide by 4
-  const amenPattern = [
-    { t: 0 * sixteenth, type: 'kick' },   // 1
-    { t: 2 * sixteenth, type: 'kick' },   // 1+
-    { t: 4 * sixteenth, type: 'snare' },  // 2
-    { t: 6 * sixteenth, type: 'kick' },   // 2+
-    { t: 8 * sixteenth, type: 'kick' },   // 3
-    { t: 10 * sixteenth, type: 'snare' }, // 3+
-    { t: 12 * sixteenth, type: 'snare' }, // 4
-    { t: 14 * sixteenth, type: 'kick' }   // 4+
-  ];
-
-  amenPattern.forEach(hit => {
-    scene.time.delayedCall((startTime + hit.t) * 1000, () => {
-      if (hit.type === 'kick') {
-        playKick(scene);
-      } else {
-        playSnare(scene);
-      }
-    });
-  });
-}
-
-function playFullMelody(scene, withAmen = false) {
-  moveNotes.forEach((note, idx) => {
-    scene.time.delayedCall(idx * 150, () => {
-      playTone(scene, note.freq, note.dur);
-    });
-  });
-
-  if (withAmen) {
-    // Loop amen break throughout the melody
-    const melodyDuration = moveNotes.length * 0.15;
-    const amenLoops = Math.ceil(melodyDuration / 2);
-    for (let i = 0; i < amenLoops; i++) {
-      playAmenBreak(scene, i * 2);
-    }
-  }
-}
