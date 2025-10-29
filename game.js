@@ -495,27 +495,40 @@ let gameOverObjects = [];
 // ==========================================
 
 // Drum patterns - string based for easy modification
+// Each word = 8th note, so you can make complex syncopated patterns!
+// Synth notes: C, D, E, F, G, A (play for 4 beats)
 const drumPatterns = {
-  intro: "kick hihat snare hihat kick . snare hihat kick hihat snare . kick hihat snare hihat",
-  playing: "kick snare kick snare",
+  intro: "kick snare hihat kick . snare hihat kick hihat snare . kick hihat snare hihat kick",
+  transition: ". . snare . snare hihat snare snare kick kick hihat kick",
+  playing: "kick hihat snare hihat kick . snare kick",
   gameOver: "kick . . . snare . . . kick . . . . . snare .",
-  win: "snare snare snare snare"
+  win: "kick snare hihat snare kick hihat snare kick kick kick snare snare hihat hihat kick kick"
+};
+
+// Synth patterns - Simple transposed chords that resolve!
+const synthPatterns = {
+  intro: "B3 . . F#4 .  F#4 E4 D4 C#4 C#4 . D4 B3 . . . . B4 A4 . . . D4",  // Your melody
+  transition: "E4 G#4 B4 D#5 E4 G#4 B4 D#5 E4 G#4 B4 D#5 E4 G#4 B4 D#5",  // Emaj7 arpeggio x4
+  playing: "F4 A4 C5 E5",                         // Fmaj7 (transposed up one)
+  gameOver: "C4 . . E4 . . G4 . . B4 . . . . . .",  // Cmaj7 arpeggio (slow)
+  win: "C4 E4 G4 B4"                              // Cmaj7 - RESOLVED!
 };
 
 // Music configuration
-let baseBPM = 120;          // Default BPM
-let currentBPM = 120;       // Current playing BPM
-let targetBPM = 120;        // Target BPM based on player speed
+let baseBPM = 95;           // Default BPM (vaporwave slow tempo)
+let currentBPM = 95;        // Current playing BPM
+let targetBPM = 95;         // Target BPM based on player speed
 let playerMoves = [];       // Track last 10 move timestamps
 const MAX_MOVES_TRACKED = 10;
 const BPM_MIN = 80;         // Minimum BPM
-const BPM_MAX = 180;        // Maximum BPM
+const BPM_MAX = 300;        // Maximum BPM
 const BPM_SMOOTHING = 0.9;  // How quickly BPM adapts (0-1, higher = slower)
 
 // Drum loop state
 let currentPattern = 'intro';
 let drumLoopTimer = null;
 let patternIndex = 0;
+let synthPatternIndex = 0;
 let isTransitioning = false;
 
 // Parse drum pattern string into array
@@ -928,8 +941,8 @@ function handleKeyInput(scene, event) {
 function handleStartScreenInput(scene, key) {
   // Any game input starts the game
   if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'KeyA' || key === 'KeyD' || key === 'Space') {
-    // Switch to playing drum loop
-    startDrumLoop(scene, 'playing');
+    // Play transition pattern first
+    startDrumLoop(scene, 'transition');
 
     // Hide title elements
     if (titleText) titleText.destroy();
@@ -953,6 +966,13 @@ function handleStartScreenInput(scene, key) {
     gameState.startTime = Date.now();
 
     phaseManager.setPhase(GamePhase.PLAYING);
+
+    // After transition, switch to playing pattern
+    const transitionPattern = parseDrumPattern(synthPatterns.transition);
+    const transitionDuration = 60000 / (currentBPM * 2) * transitionPattern.length;
+    setTimeout(() => {
+      startDrumLoop(scene, 'playing');
+    }, transitionDuration);
 
     // Process the actual input for the game
     setTimeout(() => {
@@ -1035,6 +1055,7 @@ function playDrumLoop(scene) {
   if (!drumLoopTimer) return;
 
   const pattern = parseDrumPattern(drumPatterns[currentPattern] || drumPatterns.intro);
+  const synthPattern = parseDrumPattern(synthPatterns[currentPattern] || synthPatterns.intro);
 
   // Play current beat
   if (patternIndex < pattern.length) {
@@ -1050,6 +1071,15 @@ function playDrumLoop(scene) {
     // null/rest = silence
 
     patternIndex = (patternIndex + 1) % pattern.length;
+  }
+
+  // Play synth pattern
+  if (synthPatternIndex < synthPattern.length) {
+    const note = synthPattern[synthPatternIndex];
+    if (note) {
+      playSynth(scene, note);
+    }
+    synthPatternIndex = (synthPatternIndex + 1) % synthPattern.length;
   }
 
   // Calculate next beat timing based on current BPM
@@ -1070,6 +1100,7 @@ function startDrumLoop(scene, pattern = 'intro') {
 
   currentPattern = pattern;
   patternIndex = 0;
+  synthPatternIndex = 0;
 
   // Reset BPM for new patterns
   if (pattern === 'intro' || pattern === 'gameOver') {
@@ -1119,8 +1150,15 @@ function transitionToGameOver(scene) {
 // Add hihat sound
 function playHihat(scene) {
   const ctx = scene.sound.context;
+
+  // Create tone oscillator for punch
+  const osc = ctx.createOscillator();
+  osc.frequency.value = 10000;
+  osc.type = 'square';
+
+  // Create noise
   const noise = ctx.createBufferSource();
-  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.02, ctx.sampleRate);
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
   const output = noiseBuffer.getChannelData(0);
 
   for (let i = 0; i < output.length; i++) {
@@ -1128,20 +1166,32 @@ function playHihat(scene) {
   }
 
   noise.buffer = noiseBuffer;
-  const filter = ctx.createBiquadFilter();
+
+  const highpass = ctx.createBiquadFilter();
   const gain = ctx.createGain();
+  const oscGain = ctx.createGain();
 
-  filter.type = 'highpass';
-  filter.frequency.value = 8000;
+  // Simple highpass - less filtering means more volume
+  highpass.type = 'highpass';
+  highpass.frequency.value = 6000;
 
-  noise.connect(filter);
-  filter.connect(gain);
+  // Tone for attack
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  oscGain.gain.setValueAtTime(0.4, ctx.currentTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.01);
+
+  // Noise body
+  noise.connect(highpass);
+  highpass.connect(gain);
   gain.connect(ctx.destination);
 
-  // MAX VOLUME
-  gain.gain.setValueAtTime(0.5, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.02);
+  // Punchy with good balance
+  gain.gain.setValueAtTime(1.8, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
 
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.01);
   noise.start(ctx.currentTime);
 }
 
@@ -1645,23 +1695,42 @@ function playTone(scene, freq, dur) {
 
 function playKick(scene) {
   const ctx = scene.sound.context;
+
+  // Main 808 bass
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
   osc.connect(gain);
   gain.connect(ctx.destination);
 
-  // Higher pitched and punchier - 250Hz to 60Hz
-  osc.frequency.setValueAtTime(250, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.08);
+  // Tight, punchy 808 - fast pitch drop
+  osc.frequency.setValueAtTime(120, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.05);
   osc.type = 'sine';
 
-  // MAX VOLUME for more punch
+  // Hard attack, quick decay
   gain.gain.setValueAtTime(1.0, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
 
   osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.12);
+  osc.stop(ctx.currentTime + 0.1);
+
+  // Original kick layer for extra punch
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+
+  osc2.frequency.setValueAtTime(250, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.08);
+  osc2.type = 'sine';
+
+  gain2.gain.setValueAtTime(0.4, ctx.currentTime);
+  gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+
+  osc2.start(ctx.currentTime);
+  osc2.stop(ctx.currentTime + 0.12);
 }
 
 function playSnare(scene) {
@@ -1685,5 +1754,54 @@ function playSnare(scene) {
   noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
 
   noise.start(ctx.currentTime);
+}
+
+function playSynth(scene, note) {
+  const ctx = scene.sound.context;
+
+  // Note frequencies (proper notation: NoteOctave)
+  const noteFreqs = {
+    'B3': 246.94,
+    'C4': 261.63,
+    'C#4': 277.18,
+    'D4': 293.66,
+    'D#4': 311.13,
+    'E4': 329.63,
+    'F4': 349.23,
+    'F#4': 369.99,
+    'G4': 392.00,
+    'G#4': 415.30,
+    'A4': 440.00,
+    'A#4': 466.16,
+    'B4': 493.88,
+    'C5': 523.25,
+    'D5': 587.33,
+    'D#5': 622.25,
+    'E5': 659.25,
+    'F5': 698.46,
+    'F#5': 739.99,
+    'G5': 783.99,
+    'A5': 880.00
+  };
+
+  const freq = noteFreqs[note];
+  if (!freq) return;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.frequency.value = freq;
+  osc.type = 'sine';  // Sine wave for smooth, dreamy vaporwave sound
+
+  // Longer, sustained envelope for vaporwave feel
+  gain.gain.setValueAtTime(0.12, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.05, ctx.currentTime + 0.3);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.6);
 }
 
