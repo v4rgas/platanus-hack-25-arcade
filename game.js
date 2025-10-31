@@ -89,6 +89,11 @@ class GameState {
     this.startTime = null; // Will be set on first input
     this.finalTime = null; // Single source of truth for final time
     this.blockPositions = [];
+
+    // Combo system
+    this.lastMergeTime = null;
+    this.comboCount = 0;
+    this.maxCombo = 0;
   }
 
   generateNumbers() {
@@ -202,9 +207,24 @@ class GameState {
     this.checkMerges(this.selectedIdx);
 
     if (oldLength > this.blocks.length) {
-      // MERGE - BIG SHAKE!
+      // MERGE HAPPENED!
       const mergeSize = oldLength - this.blocks.length;
-      this.scene.cameras.main.shake(300 * mergeSize, 0.008 * mergeSize);
+
+      // Check for combo (merge within 1 second)
+      const now = Date.now();
+      if (this.lastMergeTime && (now - this.lastMergeTime) < 1000) {
+        this.comboCount++;
+        this.maxCombo = Math.max(this.maxCombo, this.comboCount);
+        // Play escalating combo sound
+        playComboSound(this.scene, this.comboCount);
+      } else {
+        this.comboCount = 1; // Reset combo
+      }
+      this.lastMergeTime = now;
+
+      // BIG SHAKE with combo multiplier!
+      const comboMultiplier = Math.min(this.comboCount * 0.5, 2); // Cap at 2x
+      this.scene.cameras.main.shake(300 * mergeSize * comboMultiplier, 0.008 * mergeSize);
       this.createCoolParticles(this.selectedIdx, 0x10b981, 'merge', mergeSize);
     }
 
@@ -484,6 +504,7 @@ let phaseManager;
 let gameState;
 let graphics;
 let timerText;
+let comboText;
 let gridLines;
 let titleText;
 let titleShadow1;
@@ -771,6 +792,17 @@ function create() {
     repeat: -1,
     ease: 'Sine.easeInOut'
   });
+
+  // Combo counter (hidden initially)
+  comboText = scene.add.text(400, 140, '', {
+    fontSize: '40px',
+    fontFamily: 'Courier New, monospace',
+    color: '#fbbf24',
+    fontStyle: 'bold',
+    stroke: '#ff006e',
+    strokeThickness: 4
+  }).setOrigin(0.5);
+  comboText.setVisible(false);
 
   // Keyboard input
   scene.input.keyboard.on('keydown', (event) => {
@@ -1188,7 +1220,7 @@ function update() {
   // Draw game blocks
   gameState.draw(graphics);
 
-  // Update timer if playing
+  // Update timer and combo if playing
   if (phaseManager.getPhase() === GamePhase.PLAYING && !gameState.gameWon) {
     const elapsed = gameState.getElapsedTime();
     timerText.setText('Time: ' + elapsed.toFixed(1) + 's');
@@ -1198,6 +1230,29 @@ function update() {
       timerText.setColor('#ff006e');
     } else if (elapsed > 15) {
       timerText.setColor('#fbbf24');
+    }
+
+    // Update combo display
+    if (gameState.comboCount > 1) {
+      comboText.setText('COMBO x' + gameState.comboCount + '!');
+      comboText.setVisible(true);
+
+      // Scale based on combo size
+      const scale = 1 + (gameState.comboCount * 0.1);
+      comboText.setScale(Math.min(scale, 2));
+
+      // Shake the combo text when combo >= 3
+      if (gameState.comboCount >= 3) {
+        const shakeAmount = 3;
+        comboText.setPosition(
+          400 + (Math.random() - 0.5) * shakeAmount,
+          140 + (Math.random() - 0.5) * shakeAmount
+        );
+      } else {
+        comboText.setPosition(400, 140);
+      }
+    } else {
+      comboText.setVisible(false);
     }
   }
 }
@@ -1979,6 +2034,31 @@ function playCasinoRoll(scene) {
       osc.stop(ctx.currentTime + 0.04);
     }, delay);
   }
+}
+
+function playComboSound(scene, comboCount) {
+  const ctx = scene.sound.context;
+
+  // Escalating pitch based on combo size
+  const baseFreq = 440;
+  const freq = baseFreq * (1 + comboCount * 0.15); // Gets higher with each combo
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.frequency.value = freq;
+  osc.type = 'square';
+
+  // Quick blip that gets louder with combos
+  const volume = Math.min(0.3 + comboCount * 0.05, 0.8);
+  gain.gain.setValueAtTime(volume, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.1);
 }
 
 function playVictoryChime(scene) {
