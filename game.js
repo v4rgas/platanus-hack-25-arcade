@@ -87,6 +87,7 @@ class GameState {
     this.isGrabbed = false;
     this.gameWon = false;
     this.startTime = null; // Will be set on first input
+    this.finalTime = null; // Single source of truth for final time
     this.blockPositions = [];
   }
 
@@ -176,6 +177,7 @@ class GameState {
     this.isGrabbed = true;
     this.scene.cameras.main.shake(100, 0.003);
     this.createCoolParticles(this.selectedIdx, 0xff006e, 'grab');
+    playExplosion(this.scene, 0.6);
     this.scene.tweens.add({
       targets: this.textObjects[this.selectedIdx],
       scale: 1.15,
@@ -187,6 +189,7 @@ class GameState {
   drop() {
     this.isGrabbed = false;
     this.scene.cameras.main.shake(120, 0.004);
+    playExplosion(this.scene, 0.8);
 
     this.scene.tweens.add({
       targets: this.textObjects[this.selectedIdx],
@@ -266,6 +269,7 @@ class GameState {
     // SHAKE ON MOVE!
     this.scene.cameras.main.shake(150, 0.004);
     this.createCoolParticles(this.selectedIdx, 0xfbbf24, 'move');
+    playHit(this.scene, 0.5);
 
     return true;
   }
@@ -287,6 +291,7 @@ class GameState {
     // SHAKE ON MOVE!
     this.scene.cameras.main.shake(150, 0.004);
     this.createCoolParticles(this.selectedIdx, 0xfbbf24, 'move');
+    playHit(this.scene, 0.5);
 
     return true;
   }
@@ -360,6 +365,8 @@ class GameState {
       }
     }
     this.gameWon = true;
+    // Capture final time immediately when win is detected
+    this.finalTime = this.getElapsedTime();
     return true;
   }
 
@@ -501,28 +508,22 @@ const drumPatterns = {
   intro: "kick snare hihat kick . snare hihat kick hihat snare . kick hihat snare hihat kick",
   transition: ". . snare . snare hihat snare snare kick kick hihat kick",
   playing: "kick hihat snare hihat kick . snare kick",
-  gameOver: "kick . . . snare . . . kick . . . . . snare .",
-  win: "kick snare hihat snare kick hihat snare kick kick kick snare snare hihat hihat kick kick"
+  gameOver: "kick . . . kick . . snare . . kick . . . snare . . . kick . . snare . . . kick . . . . snare . .",
+  win: "kick kick snare kick snare snare hihat kick kick hihat snare hihat kick snare kick snare hihat hihat hihat kick kick snare snare kick kick hihat hihat snare kick"
 };
 
 // Synth patterns - Simple transposed chords that resolve!
 const synthPatterns = {
-  intro: "B3 . . F#4 .  F#4 E4 D4 C#4 C#4 . D4 B3 . . . . B4 A4 . . . D4",  // Your melody
-  transition: "E4 G#4 B4 D#5 E4 G#4 B4 D#5 E4 G#4 B4 D#5 E4 G#4 B4 D#5",  // Emaj7 arpeggio x4
-  playing: "F4 A4 C5 E5",                         // Fmaj7 (transposed up one)
-  gameOver: "C4 . . E4 . . G4 . . B4 . . . . . .",  // Cmaj7 arpeggio (slow)
-  win: "C4 E4 G4 B4"                              // Cmaj7 - RESOLVED!
+  intro: "B3 . . F#4 .  F#4 E4 D4 C#4 C#4 . D4 B3 . . . . B4 A4 . . . D4",  // Your melody (B minor)
+  transition: ". .",  // F#m7 arpeggio up an octave (subdominant)
+  playing: "F#3 A3 C#4 E4",                   // F#m7 (subdominant - creates tension)
+  gameOver: ". . . . A3 . . F#3 . . . . E3 . . D3 . C#3 . . . . . . . . . . . . . .",  // Sad descending melody with varied timing
+  win: "B4 D5 F#5 A5 B5 D5 F#5 A5 B4 F#5 A5 B5 D5 F#5 A5 B5"  // Bm7 fast arpeggio up octave!
 };
 
 // Music configuration
-let baseBPM = 95;           // Default BPM (vaporwave slow tempo)
-let currentBPM = 95;        // Current playing BPM
-let targetBPM = 95;         // Target BPM based on player speed
-let playerMoves = [];       // Track last 10 move timestamps
-const MAX_MOVES_TRACKED = 10;
-const BPM_MIN = 80;         // Minimum BPM
-const BPM_MAX = 300;        // Maximum BPM
-const BPM_SMOOTHING = 0.9;  // How quickly BPM adapts (0-1, higher = slower)
+let baseBPM = 160;           // Start fast!
+let currentBPM = 160;        // Current playing BPM
 
 // Drum loop state
 let currentPattern = 'intro';
@@ -530,6 +531,12 @@ let drumLoopTimer = null;
 let patternIndex = 0;
 let synthPatternIndex = 0;
 let isTransitioning = false;
+let currentTranspose = 0;        // Current transpose level (in semitones)
+let measureCount = 0;             // Count measures to know when to transpose
+const MAX_TRANSPOSE = 12;         // Cap at 1 octave up
+const TRANSPOSE_EVERY_MEASURES = 1; // Transpose every measure (FAST!)
+const BPM_INCREASE_PER_TRANSPOSE = 10; // BPM increase per transpose step (FAST!)
+const MAX_BPM = 280;              // Cap BPM at 280
 
 // Parse drum pattern string into array
 function parseDrumPattern(patternStr) {
@@ -539,48 +546,6 @@ function parseDrumPattern(patternStr) {
   });
 }
 
-// Calculate BPM from recent player moves
-function calculatePlayerBPM() {
-  if (playerMoves.length < 2) return baseBPM;
-
-  // Calculate average interval between moves
-  let totalInterval = 0;
-  let count = 0;
-
-  for (let i = 1; i < playerMoves.length; i++) {
-    const interval = playerMoves[i] - playerMoves[i - 1];
-    // Filter out unreasonable intervals (too fast or too slow)
-    if (interval >= 200 && interval <= 2000) {
-      totalInterval += interval;
-      count++;
-    }
-  }
-
-  if (count === 0) return currentBPM;
-
-  // Convert average interval to BPM
-  const avgInterval = totalInterval / count;
-  const calculatedBPM = Math.round(60000 / avgInterval);
-
-  // Clamp to reasonable range
-  return Math.max(BPM_MIN, Math.min(BPM_MAX, calculatedBPM));
-}
-
-// Track player move for BPM calculation
-function trackPlayerMove() {
-  const now = Date.now();
-  playerMoves.push(now);
-
-  // Keep only the last N moves
-  if (playerMoves.length > MAX_MOVES_TRACKED) {
-    playerMoves.shift();
-  }
-
-  // Update target BPM
-  if (phaseManager.getPhase() === GamePhase.PLAYING) {
-    targetBPM = calculatePlayerBPM();
-  }
-}
 
 // Display leaderboard - VERTICAL
 function showLb(scene, startY, scale = 1) {
@@ -636,7 +601,10 @@ function showLb(scene, startY, scale = 1) {
 }
 
 // Name input screen
-function showNameInput(scene, finalTime) {
+function showNameInput(scene) {
+  // Use stored final time
+  const finalTime = gameState.finalTime.toFixed(1);
+
   nameInputActive = true;
   currentName = ['A', 'A', 'A'];
   nameInputPos = 0;
@@ -984,18 +952,18 @@ function handleStartScreenInput(scene, key) {
 function handlePlayingInput(scene, key) {
   if (!gameState.isGrabbed) {
     if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.selectPrevious()) {
-      trackPlayerMove();
+      // Movement handled
     } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.selectNext()) {
-      trackPlayerMove();
+      // Movement handled
     } else if (key === 'Space') {
       gameState.grab();
       playTone(scene, 660, 0.08);
     }
   } else {
     if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.moveLeft()) {
-      trackPlayerMove();
+      // Movement handled
     } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.moveRight()) {
-      trackPlayerMove();
+      // Movement handled
     } else if (key === 'Space') {
       const won = gameState.drop();
       playTone(scene, 880, 0.12);
@@ -1024,7 +992,8 @@ function handleNameInput(scene, key) {
     }
   } else if (key === 'Space' || key === 'Enter') {
     const name = currentName.join('');
-    const finalTime = gameState.getElapsedTime().toFixed(1);
+    // Use stored final time
+    const finalTime = gameState.finalTime.toFixed(1);
     addScore(name, finalTime);
     clearNameInput();
     playTone(scene, 880, 0.15);
@@ -1077,18 +1046,25 @@ function playDrumLoop(scene) {
   if (synthPatternIndex < synthPattern.length) {
     const note = synthPattern[synthPatternIndex];
     if (note) {
-      playSynth(scene, note);
+      playSynth(scene, note, currentTranspose);
     }
     synthPatternIndex = (synthPatternIndex + 1) % synthPattern.length;
+
+    // Check if we completed a full pattern cycle (one measure)
+    if (synthPatternIndex === 0 && currentPattern === 'playing') {
+      measureCount++;
+
+      // Every measure, transpose up by 1 semitone and speed up BPM (up to cap)
+      if (measureCount % TRANSPOSE_EVERY_MEASURES === 0 && currentTranspose < MAX_TRANSPOSE) {
+        currentTranspose++;
+        // Also increase BPM
+        currentBPM = Math.min(MAX_BPM, currentBPM + BPM_INCREASE_PER_TRANSPOSE);
+      }
+    }
   }
 
   // Calculate next beat timing based on current BPM
   const beatInterval = 60000 / (currentBPM * 2); // 8th notes (2 per beat)
-
-  // Update current BPM to gradually approach target
-  if (!isTransitioning) {
-    currentBPM = currentBPM * BPM_SMOOTHING + targetBPM * (1 - BPM_SMOOTHING);
-  }
 
   // Schedule next beat
   drumLoopTimer = scene.time.delayedCall(beatInterval, () => playDrumLoop(scene));
@@ -1104,9 +1080,14 @@ function startDrumLoop(scene, pattern = 'intro') {
 
   // Reset BPM for new patterns
   if (pattern === 'intro' || pattern === 'gameOver') {
-    targetBPM = baseBPM;
     currentBPM = baseBPM;
-    playerMoves = [];
+  }
+
+  // Reset transpose, measure count, and BPM when starting playing pattern
+  if (pattern === 'playing') {
+    currentTranspose = 0;
+    measureCount = 0;
+    currentBPM = baseBPM;
   }
 
   // Start the loop
@@ -1329,10 +1310,57 @@ function drawAnimatedGrid() {
 // WIN GAME
 // ==========================================
 function winGame(scene) {
-  const finalTime = gameState.getElapsedTime().toFixed(1);
+  // Use the final time captured at the moment of winning
+  const finalTime = gameState.finalTime.toFixed(1);
+
+  // STOP ALL MUSIC
+  stopDrumLoop(scene);
+
+  // Check if high score for sound choice
+  const isHighScore = isHigh(finalTime);
+
+  // INSTANT BIG WIN!
+  if (isHighScore) {
+    // CASINO SLOT MACHINE ROLL UP for high score!
+    playCasinoRoll(scene);
+  } else {
+    // Simple victory chime for regular win
+    playVictoryChime(scene);
+  }
+
+  // MASSIVE DRUM FILL TO START!
+  setTimeout(() => {
+    playKick(scene);
+    playSnare(scene);
+    playExplosion(scene, 1.5);
+  }, 10);
+
+  setTimeout(() => {
+    playKick(scene);
+    playHihat(scene);
+  }, 70);
+
+  setTimeout(() => {
+    playSnare(scene);
+    playHihat(scene);
+  }, 130);
+
+  setTimeout(() => {
+    playKick(scene);
+    playSnare(scene);
+    playHihat(scene);
+    playExplosion(scene, 1.2);
+  }, 190);
+
+  // BIG CASINO WIN DING for high score!
+  if (isHighScore) {
+    setTimeout(() => {
+      playCasinoWin(scene);
+    }, 250);
+  }
 
   // Switch to victory drum pattern
-  startDrumLoop(scene, 'win');
+  setTimeout(() => startDrumLoop(scene, 'win'), 260);
 
   // Victory effects
   scene.cameras.main.shake(3000, 0.025);
@@ -1430,7 +1458,7 @@ function winGame(scene) {
   setTimeout(() => {
     if (isHigh(finalTime)) {
       phaseManager.setPhase(GamePhase.NAME_INPUT);
-      showNameInput(scene, finalTime);
+      showNameInput(scene);
     } else {
       phaseManager.setPhase(GamePhase.GAME_OVER);
       transitionToGameOver(scene);
@@ -1503,8 +1531,8 @@ function showGameOverScreen(scene) {
     ease: 'Sine.easeInOut'
   });
 
-  // Time display
-  const finalTime = gameState.getElapsedTime().toFixed(1);
+  // Time display - use stored final time
+  const finalTime = gameState.finalTime.toFixed(1);
   const timeText = scene.add.text(400, 160, 'Time: ' + finalTime + 's', {
     fontSize: '32px',
     fontFamily: 'Courier New, monospace',
@@ -1662,10 +1690,10 @@ function restartGame(scene) {
 
   // Reset music state
   currentBPM = baseBPM;
-  targetBPM = baseBPM;
-  playerMoves = [];
   patternIndex = 0;
   isTransitioning = false;
+  currentTranspose = 0;
+  measureCount = 0;
 
   // Reset phase manager
   phaseManager = new GameStateManager();
@@ -1756,11 +1784,17 @@ function playSnare(scene) {
   noise.start(ctx.currentTime);
 }
 
-function playSynth(scene, note) {
+function playSynth(scene, note, transpose = 0) {
   const ctx = scene.sound.context;
 
   // Note frequencies (proper notation: NoteOctave)
   const noteFreqs = {
+    'B2': 123.47,
+    'C#3': 138.59,
+    'D3': 146.83,
+    'E3': 164.81,
+    'F#3': 185.00,
+    'A3': 220.00,
     'B3': 246.94,
     'C4': 261.63,
     'C#4': 277.18,
@@ -1775,17 +1809,22 @@ function playSynth(scene, note) {
     'A#4': 466.16,
     'B4': 493.88,
     'C5': 523.25,
+    'C#5': 554.37,
     'D5': 587.33,
     'D#5': 622.25,
     'E5': 659.25,
     'F5': 698.46,
     'F#5': 739.99,
     'G5': 783.99,
-    'A5': 880.00
+    'A5': 880.00,
+    'B5': 987.77
   };
 
-  const freq = noteFreqs[note];
-  if (!freq) return;
+  const baseFreq = noteFreqs[note];
+  if (!baseFreq) return;
+
+  // Apply transpose: each semitone up is freq * 2^(1/12)
+  const freq = baseFreq * Math.pow(2, transpose / 12);
 
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -1803,5 +1842,225 @@ function playSynth(scene, note) {
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.6);
+}
+
+function playExplosion(scene, intensity = 1.0) {
+  const ctx = scene.sound.context;
+
+  // Create explosion using noise burst
+  const noise = ctx.createBufferSource();
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.2, ctx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+
+  // Generate white noise
+  for (let i = 0; i < output.length; i++) {
+    output[i] = Math.random() * 2 - 1;
+  }
+
+  noise.buffer = noiseBuffer;
+
+  // Create filter for shaping the explosion sound
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 1500;
+  lowpass.Q.value = 0.5;
+
+  const noiseGain = ctx.createGain();
+
+  // Connect: noise -> filter -> gain -> output
+  noise.connect(lowpass);
+  lowpass.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+
+  // Sharp attack, quick decay for explosion - SUPER LOUD
+  noiseGain.gain.setValueAtTime(2.5 * intensity, ctx.currentTime);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+
+  // Sweep the filter frequency down for "boom" effect
+  lowpass.frequency.setValueAtTime(2000, ctx.currentTime);
+  lowpass.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.12);
+
+  noise.start(ctx.currentTime);
+
+  // Add a low frequency "thud" component
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+
+  // Deep bass thud - MASSIVE
+  osc.frequency.setValueAtTime(100, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.1);
+  osc.type = 'sine';
+
+  oscGain.gain.setValueAtTime(2.0 * intensity, ctx.currentTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.18);
+}
+
+function playHit(scene, intensity = 1.0) {
+  const ctx = scene.sound.context;
+
+  // Short punchy noise hit
+  const noise = ctx.createBufferSource();
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.08, ctx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+
+  for (let i = 0; i < output.length; i++) {
+    output[i] = Math.random() * 2 - 1;
+  }
+
+  noise.buffer = noiseBuffer;
+
+  const highpass = ctx.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = 400;
+
+  const noiseGain = ctx.createGain();
+
+  noise.connect(highpass);
+  highpass.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+
+  // Quick punch
+  noiseGain.gain.setValueAtTime(1.5 * intensity, ctx.currentTime);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+
+  noise.start(ctx.currentTime);
+
+  // Add click/snap with high frequency
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+
+  osc.frequency.setValueAtTime(800, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.05);
+  osc.type = 'square';
+
+  oscGain.gain.setValueAtTime(0.8 * intensity, ctx.currentTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.06);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.06);
+}
+
+function playCasinoRoll(scene) {
+  const ctx = scene.sound.context;
+
+  // Rapid fire bell-like dings getting faster - DINGDINGDINGDINGDINGDING!
+  const baseFreq = 1800; // High bell tone
+  const totalDings = 25;  // More dings!
+
+  for (let i = 0; i < totalDings; i++) {
+    // Get faster and faster
+    const delay = i * (8 - i * 0.2); // Accelerating timing
+
+    setTimeout(() => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // Slight pitch variation for roll effect
+      osc.frequency.value = baseFreq + (Math.random() * 100 - 50);
+      osc.type = 'sine';
+
+      // Short sharp ding
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.04);
+    }, delay);
+  }
+}
+
+function playVictoryChime(scene) {
+  const ctx = scene.sound.context;
+
+  // Simple ascending victory chime - not as crazy as casino
+  const notes = [523.25, 659.25, 783.99]; // C-E-G major chord
+
+  notes.forEach((freq, i) => {
+    setTimeout(() => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+
+      // Pleasant chime sound
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+    }, i * 80);
+  });
+}
+
+function playCasinoWin(scene) {
+  const ctx = scene.sound.context;
+
+  // CASINO JACKPOT ALARM - harsh bright noise
+  const noise = ctx.createBufferSource();
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.8, ctx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+
+  for (let i = 0; i < output.length; i++) {
+    output[i] = Math.random() * 2 - 1;
+  }
+
+  noise.buffer = noiseBuffer;
+
+  // Bandpass filter for metallic casino sound
+  const bandpass = ctx.createBiquadFilter();
+  bandpass.type = 'bandpass';
+  bandpass.frequency.value = 2500;
+  bandpass.Q.value = 8;
+
+  const noiseGain = ctx.createGain();
+
+  noise.connect(bandpass);
+  bandpass.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+
+  // Pulsing alarm
+  noiseGain.gain.setValueAtTime(0.6, ctx.currentTime);
+  noiseGain.gain.setValueAtTime(0.1, ctx.currentTime + 0.08);
+  noiseGain.gain.setValueAtTime(0.6, ctx.currentTime + 0.16);
+  noiseGain.gain.setValueAtTime(0.1, ctx.currentTime + 0.24);
+  noiseGain.gain.setValueAtTime(0.6, ctx.currentTime + 0.32);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
+
+  noise.start(ctx.currentTime);
+
+  // Add piercing siren tone
+  const siren = ctx.createOscillator();
+  const sirenGain = ctx.createGain();
+
+  siren.connect(sirenGain);
+  sirenGain.connect(ctx.destination);
+
+  siren.frequency.setValueAtTime(2800, ctx.currentTime);
+  siren.frequency.setValueAtTime(3200, ctx.currentTime + 0.1);
+  siren.frequency.setValueAtTime(2800, ctx.currentTime + 0.2);
+  siren.frequency.setValueAtTime(3200, ctx.currentTime + 0.3);
+  siren.type = 'square';
+
+  sirenGain.gain.setValueAtTime(0.3, ctx.currentTime);
+  sirenGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+
+  siren.start(ctx.currentTime);
+  siren.stop(ctx.currentTime + 0.6);
 }
 
