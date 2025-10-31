@@ -226,6 +226,9 @@ class GameState {
       const comboMultiplier = Math.min(this.comboCount * 0.5, 2); // Cap at 2x
       this.scene.cameras.main.shake(300 * mergeSize * comboMultiplier, 0.008 * mergeSize);
       this.createCoolParticles(this.selectedIdx, 0x10b981, 'merge', mergeSize);
+
+      // Create wave effect from merge position
+      this.createMergeWave(this.selectedIdx);
     }
 
     return this.checkWin();
@@ -375,6 +378,55 @@ class GameState {
     emitter.explode();
 
     this.scene.time.delayedCall(700, () => emitter.destroy());
+  }
+
+  createMergeWave(idx) {
+    const blockW = 60;
+    const spacing = 12;
+    const block = this.blocks[idx];
+    const w = blockW * block.length + spacing * (block.length - 1);
+    const centerX = this.blockPositions[idx] + w / 2;
+    const centerY = 340;
+
+    // Create 4 expanding square rings
+    const numRings = 4;
+    const baseColor = this.comboCount >= 3 ? 0xff006e : 0x10b981;
+
+    for (let i = 0; i < numRings; i++) {
+      const ring = this.scene.add.graphics();
+      ring.lineStyle(3, baseColor, 1);
+
+      // Start small
+      const startSize = 20;
+      ring.strokeRect(centerX - startSize/2, centerY - startSize/2, startSize, startSize);
+
+      // Delay each ring slightly
+      this.scene.time.delayedCall(i * 50, () => {
+        // Tween the ring expansion
+        this.scene.tweens.add({
+          targets: ring,
+          alpha: { from: 1, to: 0 },
+          duration: 400,
+          ease: 'Cubic.easeOut',
+          onUpdate: (tween) => {
+            const progress = tween.progress;
+            const currentSize = startSize + (progress * 300);
+
+            ring.clear();
+            ring.lineStyle(3 - (progress * 2), baseColor, 1 - progress);
+            ring.strokeRect(
+              centerX - currentSize/2,
+              centerY - currentSize/2,
+              currentSize,
+              currentSize
+            );
+          },
+          onComplete: () => {
+            ring.destroy();
+          }
+        });
+      });
+    }
   }
 
   checkWin() {
