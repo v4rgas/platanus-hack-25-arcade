@@ -1,6 +1,79 @@
 // Platanus Hack 25: Snake Game
 // Navigate the snake around the "PLATANUS HACK ARCADE" title made of blocks!
 
+// =============================================================================
+// ARCADE BUTTON MAPPING - COMPLETE TEMPLATE
+// =============================================================================
+// Reference: See button-layout.webp at hack.platan.us/assets/images/arcade/
+//
+// Maps arcade button codes to keyboard keys for local testing.
+// Each arcade code can map to multiple keyboard keys (array values).
+// The arcade cabinet sends codes like 'P1U', 'P1A', etc. when buttons are pressed.
+//
+// To use in your game:
+//   if (key === 'P1U') { ... }  // Works on both arcade and local (via keyboard)
+//
+// CURRENT GAME USAGE (Snake):
+//   - P1U/P1D/P1L/P1R (Joystick) → Snake Direction
+//   - P1A (Button A) or START1 (Start Button) → Restart Game
+// =============================================================================
+
+const ARCADE_CONTROLS = {
+  // ===== PLAYER 1 CONTROLS =====
+  // Joystick - Left hand on WASD
+  'P1U': ['w'],
+  'P1D': ['s'],
+  'P1L': ['a'],
+  'P1R': ['d'],
+  'P1DL': null,  // Diagonal down-left (no keyboard default)
+  'P1DR': null,  // Diagonal down-right (no keyboard default)
+
+  // Action Buttons - Right hand on home row area (ergonomic!)
+  // Top row (ABC): U, I, O  |  Bottom row (XYZ): J, K, L
+  'P1A': ['u'],
+  'P1B': ['i'],
+  'P1C': ['o'],
+  'P1X': ['j'],
+  'P1Y': ['k'],
+  'P1Z': ['l'],
+
+  // Start Button
+  'START1': ['1', 'Enter'],
+
+  // ===== PLAYER 2 CONTROLS =====
+  // Joystick - Right hand on Arrow Keys
+  'P2U': ['ArrowUp'],
+  'P2D': ['ArrowDown'],
+  'P2L': ['ArrowLeft'],
+  'P2R': ['ArrowRight'],
+  'P2DL': null,  // Diagonal down-left (no keyboard default)
+  'P2DR': null,  // Diagonal down-right (no keyboard default)
+
+  // Action Buttons - Left hand (avoiding P1's WASD keys)
+  // Top row (ABC): R, T, Y  |  Bottom row (XYZ): F, G, H
+  'P2A': ['r'],
+  'P2B': ['t'],
+  'P2C': ['y'],
+  'P2X': ['f'],
+  'P2Y': ['g'],
+  'P2Z': ['h'],
+
+  // Start Button
+  'START2': ['2']
+};
+
+// Build reverse lookup: keyboard key → arcade button code
+const KEYBOARD_TO_ARCADE = {};
+for (const [arcadeCode, keyboardKeys] of Object.entries(ARCADE_CONTROLS)) {
+  if (keyboardKeys) {
+    // Handle both array and single value
+    const keys = Array.isArray(keyboardKeys) ? keyboardKeys : [keyboardKeys];
+    keys.forEach(key => {
+      KEYBOARD_TO_ARCADE[key] = arcadeCode;
+    });
+  }
+}
+
 const config = {
   type: Phaser.AUTO,
   width: 800,
@@ -25,7 +98,7 @@ let scoreText;
 let titleBlocks = [];
 let gameOver = false;
 let moveTimer = 0;
-let moveDelay = 150;
+let moveDelay = 100;  // Faster initial speed (was 150ms)
 let graphics;
 
 // Pixel font patterns (5x5 grid for each letter)
@@ -91,7 +164,7 @@ function create() {
   });
 
   // Instructions
-  this.add.text(400, 560, 'Arrow Keys | Avoid Walls, Yourself & The Title!', {
+  this.add.text(400, 560, 'Use Joystick to Move | Avoid Walls, Yourself & The Title!', {
     fontSize: '16px',
     fontFamily: 'Arial, sans-serif',
     color: '#888888',
@@ -108,20 +181,25 @@ function create() {
   // Spawn initial food
   spawnFood();
 
-  // Keyboard input
+  // Keyboard and Arcade Button input
   this.input.keyboard.on('keydown', (event) => {
-    if (gameOver && event.key === 'r') {
+    // Normalize keyboard input to arcade codes for easier testing
+    const key = KEYBOARD_TO_ARCADE[event.key] || event.key;
+
+    // Restart game (arcade buttons only)
+    if (gameOver && (key === 'P1A' || key === 'START1')) {
       restartGame(scene);
       return;
     }
 
-    if (event.key === 'ArrowUp' && direction.y === 0) {
+    // Direction controls (keyboard keys get mapped to arcade codes)
+    if (key === 'P1U' && direction.y === 0) {
       nextDirection = { x: 0, y: -1 };
-    } else if (event.key === 'ArrowDown' && direction.y === 0) {
+    } else if (key === 'P1D' && direction.y === 0) {
       nextDirection = { x: 0, y: 1 };
-    } else if (event.key === 'ArrowLeft' && direction.x === 0) {
+    } else if (key === 'P1L' && direction.x === 0) {
       nextDirection = { x: -1, y: 0 };
-    } else if (event.key === 'ArrowRight' && direction.x === 0) {
+    } else if (key === 'P1R' && direction.x === 0) {
       nextDirection = { x: 1, y: 0 };
     }
   });
@@ -196,7 +274,7 @@ function moveSnake(scene) {
     spawnFood();
     playTone(scene, 880, 0.1);
 
-    if (moveDelay > 80) {
+    if (moveDelay > 50) {  // Faster max speed (was 80ms)
       moveDelay -= 2;
     }
   } else {
@@ -303,7 +381,7 @@ function endGame(scene) {
   }).setOrigin(0.5);
 
   // Restart instruction with subtle animation
-  const restartText = scene.add.text(400, 480, 'Press R to Restart', {
+  const restartText = scene.add.text(400, 480, 'Press Button A or START to Restart', {
     fontSize: '24px',
     fontFamily: 'Arial, sans-serif',
     color: '#ffff00',
@@ -333,7 +411,7 @@ function restartGame(scene) {
   nextDirection = { x: 1, y: 0 };
   score = 0;
   gameOver = false;
-  moveDelay = 150;
+  moveDelay = 100;  // Match new faster initial speed
   scoreText.setText('Score: 0');
   spawnFood();
   scene.scene.restart();
