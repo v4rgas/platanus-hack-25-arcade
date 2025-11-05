@@ -1,4 +1,4 @@
 {
   "game_name": "sortEm",
-  "description": "Sort scrambled numbers by moving blocks! Consecutive numbers merge into groups that move together. Features explosive particle effects, screen shake, and animated backgrounds. Beat your best time!"
+  "description": "Move and merge number blocks to sort them from 1-10. Consecutive numbers stick together. Fast-paced arcade puzzle!"
 }

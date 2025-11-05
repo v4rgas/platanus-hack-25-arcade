@@ -451,7 +451,8 @@ class GameState {
     const h = 80;
 
     const block = this.blocks[idx];
-    const w = blockW * block.length + spacing * (block.length - 1);
+    // Cap the streak width to at most one block size
+    const w = Math.min(blockW, blockW * block.length + spacing * (block.length - 1));
 
     // Create motion blur streaks
     for (let i = 0; i < 5; i++) {
@@ -600,20 +601,18 @@ class GameState {
   }
 }
 
-// Leaderboard functions
+// ==========================================
+// IN-MEMORY LEADERBOARD STORAGE
+// ==========================================
+// Store leaderboard in memory (persists only during session)
+let leaderboardData = [];
+
 function getLb() {
-  try {
-    const data = localStorage.getItem('sortEmLb');
-    return data ? JSON.parse(data) : [];
-  } catch (e) {
-    return [];
-  }
+  return leaderboardData;
 }
 
 function saveLb(lb) {
-  try {
-    localStorage.setItem('sortEmLb', JSON.stringify(lb.slice(0, 3)));
-  } catch (e) { }
+  leaderboardData = lb.slice(0, 3);
 }
 
 function addScore(name, time) {
@@ -1004,7 +1003,7 @@ function createStartScreen(scene) {
   });
 
   // Instructions
-  instructionsText = scene.add.text(400, 120, 'Arrows: Select • Space: Grab/Drop • Move: Left/Right', {
+  instructionsText = scene.add.text(400, 90, 'Arrows: Move • Space: Grab/Drop • R: Reset', {
     fontSize: '16px',
     fontFamily: 'Courier New, monospace',
     color: '#8338ec'
@@ -1045,6 +1044,12 @@ function createStartScreen(scene) {
 // ==========================================
 function handleKeyInput(scene, event) {
   const key = event.code;
+
+  // Global reset button - works in any phase except transitioning
+  if (key === 'KeyR' && phaseManager.currentPhase !== GamePhase.TRANSITIONING) {
+    restartGame(scene);
+    return;
+  }
 
   // Check if input is allowed
   if (!phaseManager.isInputAllowed()) {
