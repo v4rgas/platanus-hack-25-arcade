@@ -1,5 +1,61 @@
 // sortEm - Instant zen mode puzzle with retro vibes
 
+// =============================================================================
+// ARCADE BUTTON MAPPING
+// =============================================================================
+// Maps arcade button codes to keyboard keys for local testing.
+// The arcade cabinet sends codes like 'P1U', 'P1A', etc. when buttons are pressed.
+//
+// CURRENT GAME USAGE (sortEm):
+//   - P1L/P1R (Joystick Left/Right) or Arrow Keys → Select block
+//   - P1A (Button A) or Space → Grab/Drop block
+//   - START1 or R → Restart game
+// =============================================================================
+
+const ARCADE_CONTROLS = {
+  // ===== PLAYER 1 CONTROLS =====
+  // Joystick - WASD or Arrow Keys
+  'P1U': ['w', 'ArrowUp'],
+  'P1D': ['s', 'ArrowDown'],
+  'P1L': ['a', 'ArrowLeft'],
+  'P1R': ['d', 'ArrowRight'],
+
+  // Action Buttons
+  'P1A': [' '],  // Space for grab/drop
+  'P1B': ['u'],
+  'P1C': ['i'],
+  'P1X': ['j'],
+  'P1Y': ['k'],
+  'P1Z': ['l'],
+
+  // Start Button
+  'START1': ['r', 'Enter'],  // R for restart
+
+  // ===== PLAYER 2 CONTROLS (Optional - for 2-player games) =====
+  'P2U': null,
+  'P2D': null,
+  'P2L': null,
+  'P2R': null,
+  'P2A': null,
+  'P2B': null,
+  'P2C': null,
+  'P2X': null,
+  'P2Y': null,
+  'P2Z': null,
+  'START2': null
+};
+
+// Build reverse lookup: keyboard key → arcade button code
+const KEYBOARD_TO_ARCADE = {};
+for (const [arcadeCode, keyboardKeys] of Object.entries(ARCADE_CONTROLS)) {
+  if (keyboardKeys) {
+    const keys = Array.isArray(keyboardKeys) ? keyboardKeys : [keyboardKeys];
+    keys.forEach(key => {
+      KEYBOARD_TO_ARCADE[key] = arcadeCode;
+    });
+  }
+}
+
 const config = {
   type: Phaser.AUTO,
   width: 800,
@@ -822,8 +878,8 @@ function showNameInput(scene) {
   const cursor = scene.add.graphics();
   nameInputObjects.push(cursor);
 
-  // Arrow instructions - arcade controller friendly
-  const arrows = scene.add.text(400, 460, '↑↓: Change Letter  ←→: Move  SPACE: Confirm', {
+  // Arcade controller instructions
+  const arrows = scene.add.text(400, 460, 'Joystick Up/Down: Change Letter  Left/Right: Move  Button A: Confirm', {
     fontSize: '16px',
     fontFamily: 'Courier New, monospace',
     color: '#00f5ff',
@@ -935,9 +991,11 @@ function create() {
   }).setOrigin(0.5);
   comboText.setVisible(false);
 
-  // Keyboard input
+  // Keyboard and Arcade Button input
   scene.input.keyboard.on('keydown', (event) => {
-    handleKeyInput(scene, event);
+    // Normalize keyboard input to arcade codes for easier handling
+    const key = KEYBOARD_TO_ARCADE[event.key] || event.key;
+    handleKeyInput(scene, key);
   });
 }
 
@@ -1003,7 +1061,7 @@ function createStartScreen(scene) {
   });
 
   // Instructions
-  instructionsText = scene.add.text(400, 90, 'Arrows: Move • Space: Grab/Drop • R: Reset', {
+  instructionsText = scene.add.text(400, 90, 'Joystick: Select • Button A: Grab/Drop • START: Reset', {
     fontSize: '16px',
     fontFamily: 'Courier New, monospace',
     color: '#8338ec'
@@ -1042,11 +1100,11 @@ function createStartScreen(scene) {
 // ==========================================
 // INPUT HANDLER
 // ==========================================
-function handleKeyInput(scene, event) {
-  const key = event.code;
+function handleKeyInput(scene, key) {
+  // key is now an arcade button code (P1U, P1A, etc.) or original key if not mapped
 
   // Global reset button - works in any phase except transitioning
-  if (key === 'KeyR' && phaseManager.currentPhase !== GamePhase.TRANSITIONING) {
+  if (key === 'START1' && phaseManager.currentPhase !== GamePhase.TRANSITIONING) {
     restartGame(scene);
     return;
   }
@@ -1076,8 +1134,8 @@ function handleKeyInput(scene, event) {
 }
 
 function handleStartScreenInput(scene, key) {
-  // Any game input starts the game
-  if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'KeyA' || key === 'KeyD' || key === 'Space') {
+  // Any game input starts the game (arcade controls)
+  if (key === 'P1L' || key === 'P1R' || key === 'P1A') {
     // Play transition pattern first
     startDrumLoop(scene, 'transition');
 
@@ -1120,20 +1178,20 @@ function handleStartScreenInput(scene, key) {
 
 function handlePlayingInput(scene, key) {
   if (!gameState.isGrabbed) {
-    if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.selectPrevious()) {
+    if (key === 'P1L' && gameState.selectPrevious()) {
       // Movement handled
-    } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.selectNext()) {
+    } else if (key === 'P1R' && gameState.selectNext()) {
       // Movement handled
-    } else if (key === 'Space') {
+    } else if (key === 'P1A') {
       gameState.grab();
       playTone(scene, 660, 0.08);
     }
   } else {
-    if ((key === 'ArrowLeft' || key === 'KeyA') && gameState.moveLeft()) {
+    if (key === 'P1L' && gameState.moveLeft()) {
       // Movement handled
-    } else if ((key === 'ArrowRight' || key === 'KeyD') && gameState.moveRight()) {
+    } else if (key === 'P1R' && gameState.moveRight()) {
       // Movement handled
-    } else if (key === 'Space') {
+    } else if (key === 'P1A') {
       const won = gameState.drop();
       playTone(scene, 880, 0.12);
       if (won) {
@@ -1145,21 +1203,21 @@ function handlePlayingInput(scene, key) {
 }
 
 function handleNameInput(scene, key) {
-  if (key === 'ArrowUp') {
+  if (key === 'P1U') {
     updateNameLetter(scene, 1);
-  } else if (key === 'ArrowDown') {
+  } else if (key === 'P1D') {
     updateNameLetter(scene, -1);
-  } else if (key === 'ArrowLeft') {
+  } else if (key === 'P1L') {
     if (nameInputPos > 0) {
       nameInputPos--;
       playTone(scene, 330, 0.05);
     }
-  } else if (key === 'ArrowRight') {
+  } else if (key === 'P1R') {
     if (nameInputPos < 2) {
       nameInputPos++;
       playTone(scene, 330, 0.05);
     }
-  } else if (key === 'Space' || key === 'Enter') {
+  } else if (key === 'P1A') {
     const name = currentName.join('');
     // Use stored final time
     const finalTime = gameState.finalTime.toFixed(1);
@@ -1176,7 +1234,7 @@ function handleNameInput(scene, key) {
 }
 
 function handleGameOverInput(scene, key) {
-  if (key === 'Space' || key === 'Enter') {
+  if (key === 'P1A') {
     // Add extra delay to prevent accidental restarts
     if (phaseManager.getPhaseTime() > 500) {
       restartGame(scene);
@@ -1806,8 +1864,8 @@ function showGameOverScreen(scene) {
     repeat: -1
   });
 
-  // "PRESS SPACE TO PLAY" text
-  const pressText = scene.add.text(400, 550, 'PRESS SPACE TO PLAY', {
+  // "PRESS BUTTON A TO PLAY" text
+  const pressText = scene.add.text(400, 550, 'PRESS BUTTON A TO PLAY', {
     fontSize: '24px',
     fontFamily: 'Courier New, monospace',
     color: '#fbbf24',
