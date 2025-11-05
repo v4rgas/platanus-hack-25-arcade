@@ -19,30 +19,43 @@ const ARCADE_CONTROLS = {
   'P1D': ['s', 'ArrowDown'],
   'P1L': ['a', 'ArrowLeft'],
   'P1R': ['d', 'ArrowRight'],
+  'P1UL': ['a', 'ArrowLeft'],  // Diagonal up-left → left
+  'P1UR': ['d', 'ArrowRight'], // Diagonal up-right → right
+  'P1DL': ['a', 'ArrowLeft'],  // Diagonal down-left → left
+  'P1DR': ['d', 'ArrowRight'], // Diagonal down-right → right
 
-  // Action Buttons
-  'P1A': [' '],  // Space for grab/drop
-  'P1B': ['u'],
-  'P1C': ['i'],
-  'P1X': ['j'],
-  'P1Y': ['k'],
-  'P1Z': ['l'],
+  // Action Buttons - ALL map to space (grab/drop action)
+  'P1A': [' '],
+  'P1B': [' '],
+  'P1C': [' '],
+  'P1X': [' '],
+  'P1Y': [' '],
+  'P1Z': [' '],
 
-  // Start Button
-  'START1': ['r', 'Enter'],  // R for restart
+  // Start Button - maps to restart
+  'START1': ['r', 'Enter'],
 
-  // ===== PLAYER 2 CONTROLS (Optional - for 2-player games) =====
-  'P2U': null,
-  'P2D': null,
-  'P2L': null,
-  'P2R': null,
-  'P2A': null,
-  'P2B': null,
-  'P2C': null,
-  'P2X': null,
-  'P2Y': null,
-  'P2Z': null,
-  'START2': null
+  // ===== PLAYER 2 CONTROLS =====
+  // Joystick - Arrow Keys (alternative input)
+  'P2U': ['ArrowUp'],
+  'P2D': ['ArrowDown'],
+  'P2L': ['ArrowLeft'],
+  'P2R': ['ArrowRight'],
+  'P2UL': ['ArrowLeft'],  // Diagonal up-left → left
+  'P2UR': ['ArrowRight'], // Diagonal up-right → right
+  'P2DL': ['ArrowLeft'],  // Diagonal down-left → left
+  'P2DR': ['ArrowRight'], // Diagonal down-right → right
+
+  // Action Buttons - ALL map to space (grab/drop action)
+  'P2A': [' '],
+  'P2B': [' '],
+  'P2C': [' '],
+  'P2X': [' '],
+  'P2Y': [' '],
+  'P2Z': [' '],
+
+  // Start Button - maps to restart
+  'START2': ['r', 'Enter']
 };
 
 // Build reverse lookup: keyboard key → arcade button code
@@ -1103,8 +1116,8 @@ function createStartScreen(scene) {
 function handleKeyInput(scene, key) {
   // key is now an arcade button code (P1U, P1A, etc.) or original key if not mapped
 
-  // Global reset button - works in any phase except transitioning
-  if (key === 'START1' && phaseManager.currentPhase !== GamePhase.TRANSITIONING) {
+  // Global reset button - works in any phase except transitioning (both START buttons)
+  if ((key === 'START1' || key === 'START2') && phaseManager.currentPhase !== GamePhase.TRANSITIONING) {
     restartGame(scene);
     return;
   }
@@ -1134,8 +1147,14 @@ function handleKeyInput(scene, key) {
 }
 
 function handleStartScreenInput(scene, key) {
-  // Any game input starts the game (arcade controls)
-  if (key === 'P1L' || key === 'P1R' || key === 'P1A') {
+  // Any game input starts the game (P1/P2 joystick or any button)
+  const isJoystick = key === 'P1L' || key === 'P1R' || key === 'P2L' || key === 'P2R' ||
+                     key === 'P1UL' || key === 'P1UR' || key === 'P1DL' || key === 'P1DR' ||
+                     key === 'P2UL' || key === 'P2UR' || key === 'P2DL' || key === 'P2DR';
+  const isButton = key === 'P1A' || key === 'P1B' || key === 'P1C' || key === 'P1X' || key === 'P1Y' || key === 'P1Z' ||
+                   key === 'P2A' || key === 'P2B' || key === 'P2C' || key === 'P2X' || key === 'P2Y' || key === 'P2Z';
+
+  if (isJoystick || isButton) {
     // Play transition pattern first
     startDrumLoop(scene, 'transition');
 
@@ -1177,21 +1196,27 @@ function handleStartScreenInput(scene, key) {
 }
 
 function handlePlayingInput(scene, key) {
+  // Accept P1/P2 joystick (including diagonals) and all buttons
+  const isLeft = key === 'P1L' || key === 'P2L' || key === 'P1UL' || key === 'P1DL' || key === 'P2UL' || key === 'P2DL';
+  const isRight = key === 'P1R' || key === 'P2R' || key === 'P1UR' || key === 'P1DR' || key === 'P2UR' || key === 'P2DR';
+  const isAction = key === 'P1A' || key === 'P1B' || key === 'P1C' || key === 'P1X' || key === 'P1Y' || key === 'P1Z' ||
+                   key === 'P2A' || key === 'P2B' || key === 'P2C' || key === 'P2X' || key === 'P2Y' || key === 'P2Z';
+
   if (!gameState.isGrabbed) {
-    if (key === 'P1L' && gameState.selectPrevious()) {
+    if (isLeft && gameState.selectPrevious()) {
       // Movement handled
-    } else if (key === 'P1R' && gameState.selectNext()) {
+    } else if (isRight && gameState.selectNext()) {
       // Movement handled
-    } else if (key === 'P1A') {
+    } else if (isAction) {
       gameState.grab();
       playTone(scene, 660, 0.08);
     }
   } else {
-    if (key === 'P1L' && gameState.moveLeft()) {
+    if (isLeft && gameState.moveLeft()) {
       // Movement handled
-    } else if (key === 'P1R' && gameState.moveRight()) {
+    } else if (isRight && gameState.moveRight()) {
       // Movement handled
-    } else if (key === 'P1A') {
+    } else if (isAction) {
       const won = gameState.drop();
       playTone(scene, 880, 0.12);
       if (won) {
@@ -1203,21 +1228,29 @@ function handlePlayingInput(scene, key) {
 }
 
 function handleNameInput(scene, key) {
-  if (key === 'P1U') {
+  // Accept P1/P2 joystick and all buttons
+  const isUp = key === 'P1U' || key === 'P2U';
+  const isDown = key === 'P1D' || key === 'P2D';
+  const isLeft = key === 'P1L' || key === 'P2L' || key === 'P1UL' || key === 'P1DL' || key === 'P2UL' || key === 'P2DL';
+  const isRight = key === 'P1R' || key === 'P2R' || key === 'P1UR' || key === 'P1DR' || key === 'P2UR' || key === 'P2DR';
+  const isAction = key === 'P1A' || key === 'P1B' || key === 'P1C' || key === 'P1X' || key === 'P1Y' || key === 'P1Z' ||
+                   key === 'P2A' || key === 'P2B' || key === 'P2C' || key === 'P2X' || key === 'P2Y' || key === 'P2Z';
+
+  if (isUp) {
     updateNameLetter(scene, 1);
-  } else if (key === 'P1D') {
+  } else if (isDown) {
     updateNameLetter(scene, -1);
-  } else if (key === 'P1L') {
+  } else if (isLeft) {
     if (nameInputPos > 0) {
       nameInputPos--;
       playTone(scene, 330, 0.05);
     }
-  } else if (key === 'P1R') {
+  } else if (isRight) {
     if (nameInputPos < 2) {
       nameInputPos++;
       playTone(scene, 330, 0.05);
     }
-  } else if (key === 'P1A') {
+  } else if (isAction) {
     const name = currentName.join('');
     // Use stored final time
     const finalTime = gameState.finalTime.toFixed(1);
@@ -1234,7 +1267,11 @@ function handleNameInput(scene, key) {
 }
 
 function handleGameOverInput(scene, key) {
-  if (key === 'P1A') {
+  // Accept any button from P1 or P2
+  const isAction = key === 'P1A' || key === 'P1B' || key === 'P1C' || key === 'P1X' || key === 'P1Y' || key === 'P1Z' ||
+                   key === 'P2A' || key === 'P2B' || key === 'P2C' || key === 'P2X' || key === 'P2Y' || key === 'P2Z';
+
+  if (isAction) {
     // Add extra delay to prevent accidental restarts
     if (phaseManager.getPhaseTime() > 500) {
       restartGame(scene);
