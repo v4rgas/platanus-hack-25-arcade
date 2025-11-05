@@ -14,48 +14,50 @@
 
 const ARCADE_CONTROLS = {
   // ===== PLAYER 1 CONTROLS =====
-  // Joystick - WASD or Arrow Keys
-  'P1U': ['w', 'ArrowUp'],
-  'P1D': ['s', 'ArrowDown'],
-  'P1L': ['a', 'ArrowLeft'],
-  'P1R': ['d', 'ArrowRight'],
-  'P1UL': ['a', 'ArrowLeft'],  // Diagonal up-left → left
-  'P1UR': ['d', 'ArrowRight'], // Diagonal up-right → right
-  'P1DL': ['a', 'ArrowLeft'],  // Diagonal down-left → left
-  'P1DR': ['d', 'ArrowRight'], // Diagonal down-right → right
+  // Joystick - Left hand on WASD
+  'P1U': ['w'],
+  'P1D': ['s'],
+  'P1L': ['a'],
+  'P1R': ['d'],
+  'P1UL': null,  // Diagonal up-left (no keyboard default)
+  'P1UR': null,  // Diagonal up-right (no keyboard default)
+  'P1DL': null,  // Diagonal down-left (no keyboard default)
+  'P1DR': null,  // Diagonal down-right (no keyboard default)
 
-  // Action Buttons - ALL map to space (grab/drop action)
-  'P1A': [' '],
-  'P1B': [' '],
-  'P1C': [' '],
-  'P1X': [' '],
-  'P1Y': [' '],
-  'P1Z': [' '],
+  // Action Buttons - Right hand on home row area (ergonomic!)
+  // Top row (ABC): U, I, O  |  Bottom row (XYZ): J, K, L
+  'P1A': ['u'],
+  'P1B': ['i'],
+  'P1C': ['o'],
+  'P1X': ['j'],
+  'P1Y': ['k'],
+  'P1Z': ['l'],
 
-  // Start Button - maps to restart
-  'START1': ['r', 'Enter'],
+  // Start Button
+  'START1': ['1', 'Enter'],
 
   // ===== PLAYER 2 CONTROLS =====
-  // Joystick - Arrow Keys (alternative input)
+  // Joystick - Right hand on Arrow Keys
   'P2U': ['ArrowUp'],
   'P2D': ['ArrowDown'],
   'P2L': ['ArrowLeft'],
   'P2R': ['ArrowRight'],
-  'P2UL': ['ArrowLeft'],  // Diagonal up-left → left
-  'P2UR': ['ArrowRight'], // Diagonal up-right → right
-  'P2DL': ['ArrowLeft'],  // Diagonal down-left → left
-  'P2DR': ['ArrowRight'], // Diagonal down-right → right
+  'P2UL': null,  // Diagonal up-left (no keyboard default)
+  'P2UR': null,  // Diagonal up-right (no keyboard default)
+  'P2DL': null,  // Diagonal down-left (no keyboard default)
+  'P2DR': null,  // Diagonal down-right (no keyboard default)
 
-  // Action Buttons - ALL map to space (grab/drop action)
-  'P2A': [' '],
-  'P2B': [' '],
-  'P2C': [' '],
-  'P2X': [' '],
-  'P2Y': [' '],
-  'P2Z': [' '],
+  // Action Buttons - Left hand (avoiding P1's WASD keys)
+  // Top row (ABC): R, T, Y  |  Bottom row (XYZ): F, G, H
+  'P2A': ['r'],
+  'P2B': ['t'],
+  'P2C': ['y'],
+  'P2X': ['f'],
+  'P2Y': ['g'],
+  'P2Z': ['h'],
 
-  // Start Button - maps to restart
-  'START2': ['r', 'Enter']
+  // Start Button
+  'START2': ['2']
 };
 
 // Build reverse lookup: keyboard key → arcade button code
