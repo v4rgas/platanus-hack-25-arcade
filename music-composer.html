@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sortEm Music Composer</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1a0a2e;
+      color: #00f5ff;
+      padding: 20px;
+      margin: 0;
+    }
+
+    h1 {
+      color: #ff006e;
+      text-align: center;
+      text-shadow: 2px 2px #8338ec;
+    }
+
+    .controls {
+      background: #2d1b4e;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 2px solid #8338ec;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: inline-block;
+      width: 100px;
+      color: #fbbf24;
+      font-weight: bold;
+    }
+
+    input[type="number"] {
+      background: #1a0a2e;
+      color: #00f5ff;
+      border: 2px solid #8338ec;
+      padding: 5px 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      width: 100px;
+    }
+
+    .instrument-track {
+      background: #2d1b4e;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+      border: 2px solid #8338ec;
+    }
+
+    .instrument-track h3 {
+      color: #ff006e;
+      margin: 0 0 10px 0;
+    }
+
+    .track-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .track-controls label {
+      width: auto;
+      margin-right: 5px;
+    }
+
+    .track-controls select {
+      background: #1a0a2e;
+      color: #00f5ff;
+      border: 2px solid #8338ec;
+      padding: 5px;
+      font-family: 'Courier New', monospace;
+    }
+
+    textarea {
+      width: 100%;
+      height: 80px;
+      background: #1a0a2e;
+      color: #10b981;
+      border: 2px solid #8338ec;
+      padding: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      resize: vertical;
+    }
+
+    .buttons {
+      text-align: center;
+      margin: 20px 0;
+    }
+
+    button {
+      background: #8338ec;
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      font-size: 18px;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 8px;
+      margin: 0 10px;
+      box-shadow: 3px 3px #ff006e;
+      transition: all 0.1s;
+    }
+
+    button:hover {
+      background: #ff006e;
+      box-shadow: 3px 3px #8338ec;
+    }
+
+    button:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px #ff006e;
+    }
+
+    button.stop {
+      background: #ff006e;
+      box-shadow: 3px 3px #8338ec;
+    }
+
+    button.stop:hover {
+      background: #8338ec;
+      box-shadow: 3px 3px #ff006e;
+    }
+
+    .info {
+      background: #2d1b4e;
+      padding: 15px;
+      border-radius: 8px;
+      border: 2px solid #10b981;
+      margin-top: 20px;
+    }
+
+    .info h3 {
+      color: #10b981;
+      margin-top: 0;
+    }
+
+    .info code {
+      color: #fbbf24;
+    }
+
+    .playhead {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      background: #ff006e;
+      border-radius: 50%;
+      margin-left: 10px;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+
+    .playhead.active {
+      opacity: 1;
+      animation: pulse 0.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.5); }
+    }
+  </style>
+</head>
+<body>
+  <h1>🎵 sortEm Music Composer 🎵</h1>
+
+  <div class="controls">
+    <div class="control-group">
+      <label>BPM:</label>
+      <input type="number" id="bpm" value="160" min="60" max="300" step="10">
+      <span class="playhead" id="playhead"></span>
+    </div>
+    <div class="control-group">
+      <label>Measures:</label>
+      <input type="number" id="measures" value="2" min="1" max="8" step="1">
+      <span style="color: #8338ec; margin-left: 10px;">Number of measures to loop</span>
+    </div>
+  </div>
+
+  <div class="instrument-track">
+    <h3>Lead Melody</h3>
+    <div class="track-controls">
+      <label>Wave:</label>
+      <select id="lead-wave">
+        <option value="sine">Sine</option>
+        <option value="square" selected>Square</option>
+        <option value="sawtooth">Sawtooth</option>
+        <option value="triangle">Triangle</option>
+      </select>
+      <label style="margin-left: 20px;">Volume:</label>
+      <input type="number" id="lead-volume" value="0.3" min="0" max="1" step="0.1" style="width: 60px;">
+    </div>
+    <textarea id="lead-notes" placeholder="Enter notes separated by spaces (e.g., C4 E4 G4 B4 - - C5 E5)
+Use '-' for rests
+Each note/rest is one 16th note">C4 E4 G4 B4 - - C5 E5 - - B4 G4 E4 C4 - -</textarea>
+  </div>
+
+  <div class="instrument-track">
+    <h3>Bass Line</h3>
+    <div class="track-controls">
+      <label>Wave:</label>
+      <select id="bass-wave">
+        <option value="sine" selected>Sine</option>
+        <option value="square">Square</option>
+        <option value="sawtooth">Sawtooth</option>
+        <option value="triangle">Triangle</option>
+      </select>
+      <label style="margin-left: 20px;">Volume:</label>
+      <input type="number" id="bass-volume" value="0.4" min="0" max="1" step="0.1" style="width: 60px;">
+    </div>
+    <textarea id="bass-notes" placeholder="Enter notes separated by spaces
+Use '-' for rests">E2 - - - E2 - - - E2 - - - E2 - - -</textarea>
+  </div>
+
+  <div class="instrument-track">
+    <h3>Chords</h3>
+    <div class="track-controls">
+      <label>Wave:</label>
+      <select id="chord-wave">
+        <option value="sine">Sine</option>
+        <option value="square">Square</option>
+        <option value="sawtooth">Sawtooth</option>
+        <option value="triangle" selected>Triangle</option>
+      </select>
+      <label style="margin-left: 20px;">Volume:</label>
+      <input type="number" id="chord-volume" value="0.2" min="0" max="1" step="0.1" style="width: 60px;">
+    </div>
+    <textarea id="chord-notes" placeholder="Enter chord notes separated by commas, sequences separated by spaces
+Use '-' for rests
+Example: E3,G3,B3 means play E3, G3, and B3 together">E3,G3,B3 - - - E3,G3,B3 - - - D3,F#3,A3 - - - D3,F#3,A3 - - -</textarea>
+  </div>
+
+  <div class="instrument-track">
+    <h3>Drums (Kick)</h3>
+    <div class="track-controls">
+      <label>Volume:</label>
+      <input type="number" id="kick-volume" value="0.5" min="0" max="1" step="0.1" style="width: 60px;">
+    </div>
+    <textarea id="kick-pattern" placeholder="Use 'x' for hit, '-' for silence
+Each position is one 16th note">x - - - x - - - x - - - x - - -</textarea>
+  </div>
+
+  <div class="instrument-track">
+    <h3>Drums (Hi-Hat)</h3>
+    <div class="track-controls">
+      <label>Volume:</label>
+      <input type="number" id="hihat-volume" value="1.0" min="0" max="1" step="0.1" style="width: 60px;">
+    </div>
+    <textarea id="hihat-pattern" placeholder="Use 'x' for hit, '-' for silence">- - x - - - x - - - x - - - x -</textarea>
+  </div>
+
+  <div class="instrument-track">
+    <h3>Drums (Snare)</h3>
+    <div class="track-controls">
+      <label>Volume:</label>
+      <input type="number" id="snare-volume" value="1.0" min="0" max="1" step="0.1" style="width: 60px;">
+    </div>
+    <textarea id="snare-pattern" placeholder="Use 'x' for hit, '-' for silence">- - - - x - - - - - - - x - - -</textarea>
+  </div>
+
+  <div class="buttons">
+    <button id="play-btn" onclick="startLoop()">▶ PLAY</button>
+    <button id="stop-btn" class="stop" onclick="stopLoop()">■ STOP</button>
+    <button onclick="exportCode()" style="background: #10b981; box-shadow: 3px 3px #fbbf24;">📋 EXPORT CODE</button>
+  </div>
+
+  <div id="code-output" style="display: none; margin-top: 20px;">
+    <div class="info">
+      <h3>🎵 Exported Code - Copy to game.js</h3>
+      <p style="color: #fbbf24;">Copy this code and paste it into your game.js file to play this music sequence:</p>
+      <textarea id="exported-code" readonly style="height: 300px; font-size: 12px; color: #00f5ff;"></textarea>
+    </div>
+  </div>
+
+  <div class="info">
+    <h3>📝 Instructions</h3>
+    <p><strong>Notes:</strong> Use note names like <code>C4</code>, <code>E4</code>, <code>G#4</code>, <code>Bb3</code>, etc.</p>
+    <p><strong>Timing:</strong> Each note/rest/hit is <strong>one 16th note</strong>. 16 positions = 1 measure.</p>
+    <p><strong>Rests:</strong> Use <code>-</code> for silence in any track.</p>
+    <p><strong>Chords:</strong> Separate simultaneous notes with commas: <code>C4,E4,G4</code></p>
+    <p><strong>Available Notes:</strong> C2, C#2, D2, D#2, E2, F2, F#2, G2, G#2, A2, A#2, B2 (and octaves 3, 4, 5, 6)</p>
+  </div>
+
+  <script>
+    // Same note frequencies as game.js
+    const noteFreqs = {
+      'C2': 65.41, 'C#2': 69.30, 'D2': 73.42, 'D#2': 77.78, 'E2': 82.41, 'F2': 87.31,
+      'F#2': 92.50, 'G2': 98.00, 'G#2': 103.83, 'A2': 110.00, 'A#2': 116.54, 'B2': 123.47,
+      'C3': 130.81, 'C#3': 138.59, 'D3': 146.83, 'D#3': 155.56, 'E3': 164.81, 'F3': 174.61,
+      'F#3': 185.00, 'G3': 196.00, 'G#3': 207.65, 'A3': 220.00, 'A#3': 233.08, 'B3': 246.94,
+      'C4': 261.63, 'C#4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'E4': 329.63, 'F4': 349.23,
+      'F#4': 369.99, 'G4': 392.00, 'G#4': 415.30, 'A4': 440.00, 'A#4': 466.16, 'B4': 493.88,
+      'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25, 'F5': 698.46,
+      'F#5': 739.99, 'G5': 783.99, 'G#5': 830.61, 'A5': 880.00, 'A#5': 932.33, 'B5': 987.77,
+      'C6': 1046.50, 'C#6': 1108.73, 'D6': 1174.66, 'D#6': 1244.51, 'E6': 1318.51, 'F6': 1396.91,
+      'F#6': 1479.98, 'G6': 1567.98, 'G#6': 1661.22, 'A6': 1760.00, 'A#6': 1864.66, 'B6': 1975.53,
+      'Bb2': 116.54, 'Bb3': 233.08, 'Bb4': 466.16, 'Bb5': 932.33, 'Bb6': 1864.66
+    };
+
+    let audioContext;
+    let isPlaying = false;
+    let schedulerInterval;
+    let nextNoteTime = 0;
+    let currentStep = 0;
+    let lookahead = 25.0; // How frequently to call scheduling function (in milliseconds)
+    let scheduleAheadTime = 0.1; // How far ahead to schedule audio (sec)
+
+    function initAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playNote(frequency, duration, waveType, volume, time) {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+
+      osc.frequency.value = frequency;
+      osc.type = waveType;
+
+      gain.gain.setValueAtTime(volume, time);
+      gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
+
+      osc.start(time);
+      osc.stop(time + duration);
+    }
+
+    // EXACT DRUMS FROM GAME.JS
+    function playKick(volume, time) {
+      const ctx = audioContext;
+
+      // Main 808 bass
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // Tight, punchy 808 - fast pitch drop
+      osc.frequency.setValueAtTime(120, time);
+      osc.frequency.exponentialRampToValueAtTime(50, time + 0.05);
+      osc.type = 'sine';
+
+      // Hard attack, quick decay
+      gain.gain.setValueAtTime(1.0 * volume, time);
+      gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+
+      osc.start(time);
+      osc.stop(time + 0.1);
+
+      // Original kick layer for extra punch
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+
+      osc2.frequency.setValueAtTime(250, time);
+      osc2.frequency.exponentialRampToValueAtTime(60, time + 0.08);
+      osc2.type = 'sine';
+
+      gain2.gain.setValueAtTime(0.4 * volume, time);
+      gain2.gain.exponentialRampToValueAtTime(0.01, time + 0.12);
+
+      osc2.start(time);
+      osc2.stop(time + 0.12);
+    }
+
+    function playHiHat(volume, time) {
+      const ctx = audioContext;
+
+      // Create tone oscillator for punch
+      const osc = ctx.createOscillator();
+      osc.frequency.value = 10000;
+      osc.type = 'square';
+
+      // Create noise
+      const noise = ctx.createBufferSource();
+      const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+
+      for (let i = 0; i < output.length; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+
+      noise.buffer = noiseBuffer;
+
+      const highpass = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      const oscGain = ctx.createGain();
+
+      // Simple highpass - less filtering means more volume
+      highpass.type = 'highpass';
+      highpass.frequency.value = 6000;
+
+      // Tone for attack
+      osc.connect(oscGain);
+      oscGain.connect(ctx.destination);
+      oscGain.gain.setValueAtTime(0.4 * volume, time);
+      oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.01);
+
+      // Noise body
+      noise.connect(highpass);
+      highpass.connect(gain);
+      gain.connect(ctx.destination);
+
+      // Punchy with good balance
+      gain.gain.setValueAtTime(1.8 * volume, time);
+      gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+
+      osc.start(time);
+      osc.stop(time + 0.01);
+      noise.start(time);
+    }
+
+    function playSnare(volume, time) {
+      const ctx = audioContext;
+      const noise = ctx.createBufferSource();
+      const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+
+      for (let i = 0; i < output.length; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+
+      noise.buffer = noiseBuffer;
+      const noiseGain = ctx.createGain();
+
+      noise.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
+
+      // MAX VOLUME
+      noiseGain.gain.setValueAtTime(0.8 * volume, time);
+      noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+
+      noise.start(time);
+    }
+
+    function parseSequence(text) {
+      return text.trim().split(/\s+/).filter(n => n);
+    }
+
+    let sequenceData = {};
+
+    function scheduleNote() {
+      const { bpm, measures, sixteenthNoteDuration, totalSteps,
+              leadNotes, bassNotes, chordNotes, kickPattern, hihatPattern, snarePattern,
+              leadWave, bassWave, chordWave,
+              leadVolume, bassVolume, chordVolume, kickVolume, hihatVolume, snareVolume } = sequenceData;
+
+      // Schedule notes that fall within the lookahead time
+      while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
+        // Play lead
+        if (currentStep < leadNotes.length) {
+          const note = leadNotes[currentStep];
+          if (note !== '-' && noteFreqs[note]) {
+            playNote(noteFreqs[note], sixteenthNoteDuration * 0.9, leadWave, leadVolume, nextNoteTime);
+          }
+        }
+
+        // Play bass
+        if (currentStep < bassNotes.length) {
+          const note = bassNotes[currentStep];
+          if (note !== '-' && noteFreqs[note]) {
+            playNote(noteFreqs[note], sixteenthNoteDuration * 0.9, bassWave, bassVolume, nextNoteTime);
+          }
+        }
+
+        // Play chord
+        if (currentStep < chordNotes.length) {
+          const chord = chordNotes[currentStep];
+          if (chord !== '-') {
+            const notes = chord.split(',');
+            notes.forEach(note => {
+              const trimmed = note.trim();
+              if (noteFreqs[trimmed]) {
+                playNote(noteFreqs[trimmed], sixteenthNoteDuration * 0.9, chordWave, chordVolume, nextNoteTime);
+              }
+            });
+          }
+        }
+
+        // Play kick
+        if (currentStep < kickPattern.length) {
+          if (kickPattern[currentStep] === 'x') {
+            playKick(kickVolume, nextNoteTime);
+          }
+        }
+
+        // Play hi-hat
+        if (currentStep < hihatPattern.length) {
+          if (hihatPattern[currentStep] === 'x') {
+            playHiHat(hihatVolume, nextNoteTime);
+          }
+        }
+
+        // Play snare
+        if (currentStep < snarePattern.length) {
+          if (snarePattern[currentStep] === 'x') {
+            playSnare(snareVolume, nextNoteTime);
+          }
+        }
+
+        // Advance to next note
+        nextNoteTime += sixteenthNoteDuration;
+        currentStep++;
+
+        // Loop back to start after completing all measures
+        if (currentStep >= totalSteps) {
+          currentStep = 0;
+        }
+      }
+    }
+
+    function startLoop() {
+      initAudio();
+
+      if (isPlaying) return;
+      isPlaying = true;
+
+      const bpm = parseInt(document.getElementById('bpm').value);
+      const measures = parseInt(document.getElementById('measures').value);
+      const sixteenthNoteDuration = (60 / bpm) / 4; // Duration of one 16th note in seconds
+
+      // Parse all sequences
+      const leadNotes = parseSequence(document.getElementById('lead-notes').value);
+      const bassNotes = parseSequence(document.getElementById('bass-notes').value);
+      const chordNotes = parseSequence(document.getElementById('chord-notes').value);
+      const kickPattern = parseSequence(document.getElementById('kick-pattern').value);
+      const hihatPattern = parseSequence(document.getElementById('hihat-pattern').value);
+      const snarePattern = parseSequence(document.getElementById('snare-pattern').value);
+
+      const leadWave = document.getElementById('lead-wave').value;
+      const bassWave = document.getElementById('bass-wave').value;
+      const chordWave = document.getElementById('chord-wave').value;
+
+      const leadVolume = parseFloat(document.getElementById('lead-volume').value);
+      const bassVolume = parseFloat(document.getElementById('bass-volume').value);
+      const chordVolume = parseFloat(document.getElementById('chord-volume').value);
+      const kickVolume = parseFloat(document.getElementById('kick-volume').value);
+      const hihatVolume = parseFloat(document.getElementById('hihat-volume').value);
+      const snareVolume = parseFloat(document.getElementById('snare-volume').value);
+
+      const totalSteps = 16 * measures; // 16th notes per measure * number of measures
+
+      // Store all sequence data for scheduler
+      sequenceData = {
+        bpm, measures, sixteenthNoteDuration, totalSteps,
+        leadNotes, bassNotes, chordNotes, kickPattern, hihatPattern, snarePattern,
+        leadWave, bassWave, chordWave,
+        leadVolume, bassVolume, chordVolume, kickVolume, hihatVolume, snareVolume
+      };
+
+      currentStep = 0;
+      nextNoteTime = audioContext.currentTime;
+      document.getElementById('playhead').classList.add('active');
+
+      // Start the scheduler
+      schedulerInterval = setInterval(scheduleNote, lookahead);
+    }
+
+    function stopLoop() {
+      isPlaying = false;
+      if (schedulerInterval) {
+        clearInterval(schedulerInterval);
+        schedulerInterval = null;
+      }
+      currentStep = 0;
+      document.getElementById('playhead').classList.remove('active');
+    }
+
+    function exportCode() {
+      const bpm = parseInt(document.getElementById('bpm').value);
+      const measures = parseInt(document.getElementById('measures').value);
+
+      const leadNotes = parseSequence(document.getElementById('lead-notes').value);
+      const bassNotes = parseSequence(document.getElementById('bass-notes').value);
+      const chordNotes = parseSequence(document.getElementById('chord-notes').value);
+      const kickPattern = parseSequence(document.getElementById('kick-pattern').value);
+      const hihatPattern = parseSequence(document.getElementById('hihat-pattern').value);
+      const snarePattern = parseSequence(document.getElementById('snare-pattern').value);
+
+      const leadWave = document.getElementById('lead-wave').value;
+      const bassWave = document.getElementById('bass-wave').value;
+      const chordWave = document.getElementById('chord-wave').value;
+
+      const leadVolume = parseFloat(document.getElementById('lead-volume').value);
+      const bassVolume = parseFloat(document.getElementById('bass-volume').value);
+      const chordVolume = parseFloat(document.getElementById('chord-volume').value);
+
+      let code = `// Music sequence exported from composer
+// BPM: ${bpm}, Measures: ${measures}
+
+function playMusicSequence(scene) {
+  const ctx = scene.sound.context;
+  const bpm = ${bpm};
+  const sixteenthNote = (60 / bpm) / 4; // Duration of one 16th note
+
+  const leadNotes = ${JSON.stringify(leadNotes)};
+  const bassNotes = ${JSON.stringify(bassNotes)};
+  const chordNotes = ${JSON.stringify(chordNotes)};
+  const kickPattern = ${JSON.stringify(kickPattern)};
+  const hihatPattern = ${JSON.stringify(hihatPattern)};
+  const snarePattern = ${JSON.stringify(snarePattern)};
+
+  let step = 0;
+  const totalSteps = 16 * ${measures};
+
+  const interval = scene.time.addEvent({
+    delay: sixteenthNote * 1000,
+    callback: () => {
+      // Lead melody
+      if (step < leadNotes.length && leadNotes[step] !== '-') {
+        const freq = noteFreqs[leadNotes[step]];
+        if (freq) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = '${leadWave}';
+          gain.gain.setValueAtTime(${leadVolume}, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + sixteenthNote * 0.9);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + sixteenthNote * 0.9);
+        }
+      }
+
+      // Bass line
+      if (step < bassNotes.length && bassNotes[step] !== '-') {
+        const freq = noteFreqs[bassNotes[step]];
+        if (freq) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = '${bassWave}';
+          gain.gain.setValueAtTime(${bassVolume}, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + sixteenthNote * 0.9);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + sixteenthNote * 0.9);
+        }
+      }
+
+      // Chords
+      if (step < chordNotes.length && chordNotes[step] !== '-') {
+        const chord = chordNotes[step];
+        const notes = chord.split(',');
+        notes.forEach(note => {
+          const freq = noteFreqs[note.trim()];
+          if (freq) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = freq;
+            osc.type = '${chordWave}';
+            gain.gain.setValueAtTime(${chordVolume}, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + sixteenthNote * 0.9);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + sixteenthNote * 0.9);
+          }
+        });
+      }
+
+      // Drums
+      if (step < kickPattern.length && kickPattern[step] === 'x') {
+        playKick(scene);
+      }
+      if (step < hihatPattern.length && hihatPattern[step] === 'x') {
+        playHihat(scene);
+      }
+      if (step < snarePattern.length && snarePattern[step] === 'x') {
+        playSnare(scene);
+      }
+
+      step++;
+      if (step >= totalSteps) step = 0; // Loop
+    },
+    loop: true
+  });
+
+  return interval; // Return so you can stop it later with interval.remove()
+}
+
+// To use:
+// const musicLoop = playMusicSequence(this);
+// To stop: musicLoop.remove();
+`;
+
+      document.getElementById('exported-code').value = code;
+      document.getElementById('code-output').style.display = 'block';
+      document.getElementById('exported-code').select();
+    }
+  </script>
+</body>
+</html>

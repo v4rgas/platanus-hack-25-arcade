@@ -294,6 +294,10 @@ class GameState {
     this.createCoolParticles(this.selectedIdx, 0xfbbf24, 'move');
     playHit(this.scene, 0.5);
 
+    // MEGA QUICK DIRECTIONAL ANIMATION!
+    this.createDirectionalStreak('left', this.selectedIdx);
+    this.animateBlockSlide('left', this.selectedIdx);
+
     return true;
   }
 
@@ -315,6 +319,10 @@ class GameState {
     this.scene.cameras.main.shake(150, 0.004);
     this.createCoolParticles(this.selectedIdx, 0xfbbf24, 'move');
     playHit(this.scene, 0.5);
+
+    // MEGA QUICK DIRECTIONAL ANIMATION!
+    this.createDirectionalStreak('right', this.selectedIdx);
+    this.animateBlockSlide('right', this.selectedIdx);
 
     return true;
   }
@@ -427,6 +435,78 @@ class GameState {
         });
       });
     }
+  }
+
+  createDirectionalStreak(direction, idx) {
+    // Get the old position (where it's moving FROM)
+    const oldIdx = direction === 'left' ? idx + 1 : idx - 1;
+
+    // Create a visual trail/blur effect from old position to new
+    const blockW = 60;
+    const spacing = 12;
+
+    const oldX = this.blockPositions[oldIdx];
+    const newX = this.blockPositions[idx];
+    const y = 300;
+    const h = 80;
+
+    const block = this.blocks[idx];
+    const w = blockW * block.length + spacing * (block.length - 1);
+
+    // Create motion blur streaks
+    for (let i = 0; i < 5; i++) {
+      const blur = this.scene.add.graphics();
+      const progress = i / 5;
+      const blurX = oldX + (newX - oldX) * progress;
+
+      blur.fillStyle(0x00f5ff, 0.3 - i * 0.05);
+      blur.fillRect(blurX, y, w, h);
+
+      this.scene.tweens.add({
+        targets: blur,
+        alpha: 0,
+        duration: 100,
+        delay: i * 10,
+        onComplete: () => blur.destroy()
+      });
+    }
+  }
+
+  animateBlockSlide(direction, idx) {
+    // Animate the SWAP - both blocks slide to their new positions
+    const oldIdx = direction === 'left' ? idx + 1 : idx - 1;
+
+    const movingBlock = this.textObjects[idx];
+    const swapBlock = this.textObjects[oldIdx];
+
+    // Calculate distance to travel
+    const blockW = 60;
+    const spacing = 12;
+    const movingBlockWidth = blockW * this.blocks[idx].length + spacing * (this.blocks[idx].length - 1);
+    const swapBlockWidth = blockW * this.blocks[oldIdx].length + spacing * (this.blocks[oldIdx].length - 1);
+
+    const distance = (movingBlockWidth + swapBlockWidth) / 2 + spacing;
+    const slideAmount = direction === 'left' ? -distance : distance;
+
+    // Store original X positions
+    movingBlock.forEach(text => { text.originalX = text.x; });
+    swapBlock.forEach(text => { text.originalX = text.x; });
+
+    // Quick snap slide - moving block goes one way
+    this.scene.tweens.add({
+      targets: movingBlock,
+      x: (target) => target.originalX + slideAmount,
+      duration: 80,
+      ease: 'Back.easeOut'
+    });
+
+    // Other block slides the opposite way
+    this.scene.tweens.add({
+      targets: swapBlock,
+      x: (target) => target.originalX - slideAmount,
+      duration: 80,
+      ease: 'Back.easeOut'
+    });
   }
 
   checkWin() {
