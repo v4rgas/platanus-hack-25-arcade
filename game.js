@@ -7,26 +7,25 @@
 // The arcade cabinet sends codes like 'P1U', 'P1A', etc. when buttons are pressed.
 //
 // CURRENT GAME USAGE (sortEm):
-//   - P1L/P1R (Joystick Left/Right) or Arrow Keys → Select block
-//   - P1A (Button A) or Space → Grab/Drop block
-//   - START1 or R → Restart game
+//   - Arrow Keys (←/→) or A/D → Select/Move block
+//   - Space or U → Grab/Drop block
+//   - Enter or 1 → Restart game
 // =============================================================================
 
 const ARCADE_CONTROLS = {
   // ===== PLAYER 1 CONTROLS =====
-  // Joystick - Left hand on WASD
-  'P1U': ['w'],
-  'P1D': ['s'],
-  'P1L': ['a'],
-  'P1R': ['d'],
+  // Joystick - WASD or Arrow Keys
+  'P1U': ['w', 'ArrowUp'],
+  'P1D': ['s', 'ArrowDown'],
+  'P1L': ['a', 'ArrowLeft'],
+  'P1R': ['d', 'ArrowRight'],
   'P1UL': null,  // Diagonal up-left (no keyboard default)
   'P1UR': null,  // Diagonal up-right (no keyboard default)
   'P1DL': null,  // Diagonal down-left (no keyboard default)
   'P1DR': null,  // Diagonal down-right (no keyboard default)
 
-  // Action Buttons - Right hand on home row area (ergonomic!)
-  // Top row (ABC): U, I, O  |  Bottom row (XYZ): J, K, L
-  'P1A': ['u'],
+  // Action Buttons - Space or U/I/O/J/K/L
+  'P1A': ['u', ' '],
   'P1B': ['i'],
   'P1C': ['o'],
   'P1X': ['j'],
@@ -37,11 +36,11 @@ const ARCADE_CONTROLS = {
   'START1': ['1', 'Enter'],
 
   // ===== PLAYER 2 CONTROLS =====
-  // Joystick - Right hand on Arrow Keys
-  'P2U': ['ArrowUp'],
-  'P2D': ['ArrowDown'],
-  'P2L': ['ArrowLeft'],
-  'P2R': ['ArrowRight'],
+  // Joystick - Arrow Keys (also mapped to P1 for convenience)
+  'P2U': [],
+  'P2D': [],
+  'P2L': [],
+  'P2R': [],
   'P2UL': null,  // Diagonal up-left (no keyboard default)
   'P2UR': null,  // Diagonal up-right (no keyboard default)
   'P2DL': null,  // Diagonal down-left (no keyboard default)
@@ -894,7 +893,7 @@ function showNameInput(scene) {
   nameInputObjects.push(cursor);
 
   // Arcade controller instructions
-  const arrows = scene.add.text(400, 460, 'Joystick Up/Down: Change Letter  Left/Right: Move  Button A: Confirm', {
+  const arrows = scene.add.text(400, 460, '↑/↓: Change Letter  ←/→: Move  Space: Confirm', {
     fontSize: '16px',
     fontFamily: 'Courier New, monospace',
     color: '#00f5ff',
@@ -1076,7 +1075,7 @@ function createStartScreen(scene) {
   });
 
   // Instructions
-  instructionsText = scene.add.text(400, 90, 'Joystick: Select • Button A: Grab/Drop • START: Reset', {
+  instructionsText = scene.add.text(400, 90, '←/→: Select • Space: Grab/Drop • Enter: Reset', {
     fontSize: '16px',
     fontFamily: 'Courier New, monospace',
     color: '#8338ec'
@@ -1907,8 +1906,8 @@ function showGameOverScreen(scene) {
     repeat: -1
   });
 
-  // "PRESS BUTTON A TO PLAY" text
-  const pressText = scene.add.text(400, 550, 'PRESS BUTTON A TO PLAY', {
+  // "PRESS SPACE TO PLAY" text
+  const pressText = scene.add.text(400, 550, 'PRESS SPACE TO PLAY', {
     fontSize: '24px',
     fontFamily: 'Courier New, monospace',
     color: '#fbbf24',
